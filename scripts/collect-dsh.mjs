@@ -337,10 +337,11 @@ function applySharpStub() {
  * inactiveRows 会跳过 disabled: true 的行，故禁用后 preset 可正常挂载（终端/内容搜索能力按
  * §18.3 取舍，文件读写 tool-fs 等不依赖子进程的工具保留）。
  */
+// 注：0.2.0 的 preset 文件里没有 10 空格的 `persistent-shell` 顶层行（minimal 的持久 shell
+// 组是 14 空格嵌套在 persistent-shell group 内，补丁不认），故不再列入禁用表 —— 避免误伤 minimal。
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': '依赖 shell 服务（bash 终端，node-pty 子进程，MVP 已禁用）',
   'tool-fs-search': '依赖 subprocess 跑 ripgrep 内容搜索（node-pty 已禁用）',
-  'persistent-shell': '依赖 pty 终端服务（node-pty 已禁用）',
 };
 
 /**
@@ -384,10 +385,17 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   },
 ];
 
-const TOP_ROW_RE = /^- id: ([A-Za-z0-9_-]+)\s*$/;
+// dsh ≥ 0.2.0 的 preset 文件是「一个 - insert: 行内嵌 config.plugins: 数组」：插件行以 10 空格
+// `- id:` 起始，其 name:/disabled:/config: 等键为 12 空格，cordis:group 的内层子行为 14 空格。
+// 补丁只认 10 空格的顶层插件行；14 空格的嵌套行（如 minimal 的 terminal-bash / persistent-bash）
+// 一律不动，避免误伤 minimal 的持久 shell 组。
+const TOP_ROW_RE = /^          - id: ([A-Za-z0-9_-]+)\s*$/;
+const TOP_ROW_INDENT = '          '; // 10 空格：顶层插件行 `- id:` 的缩进
+const KEY_INDENT = '            ';   // 12 空格：行内 name:/disabled: 等键的缩进
 const HARMONY_MARKER = '# HarmonyOS:';
 
-/** preset 顶层（列 0）是否已有该 id 的行；group 内 4 空格缩进的嵌套行不算。 */
+/** 本 preset 的 config.plugins 数组顶层（10 空格 `- id:`）是否已有该 id 的行；
+ *  cordis:group 内 14 空格的嵌套行不算（minimal 的 terminal-bash / persistent-bash 即属此类）。 */
 function hasTopLevelRow(lines, id) {
   for (const line of lines) {
     const m = TOP_ROW_RE.exec(line);
@@ -396,14 +404,17 @@ function hasTopLevelRow(lines, id) {
   return false;
 }
 
-/** 按 HARMONY_ENSURED_PRESET_ROWS 追加缺失的顶层行；返回追加数。 */
+/** 按 HARMONY_ENSURED_PRESET_ROWS 追加缺失的顶层插件行；返回追加数。
+ *  行以 10 空格 `- id:` / 12 空格 `name:` 追加到文件末尾（即 config.plugins 数组末），
+ *  与数组内既有行的缩进一致；idempotency 由 hasTopLevelRow（按 id）保证。 */
 function ensurePresetRows(out) {
   let ensured = 0;
   for (const spec of HARMONY_ENSURED_PRESET_ROWS) {
     if (spec.requireRow !== undefined && !hasTopLevelRow(out, spec.requireRow)) continue;
     if (hasTopLevelRow(out, spec.id)) continue;
-    while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
-    out.push('', `# ${spec.reason}`, `- id: ${spec.id}`, `  name: '${spec.name}'`, '');
+    out.push(`# ${spec.reason}`);
+    out.push(`${TOP_ROW_INDENT}- id: ${spec.id}`);
+    out.push(`${KEY_INDENT}name: '${spec.name}'`);
     ensured++;
   }
   return ensured;
@@ -500,21 +511,19 @@ function assertPresetRowsMirrorMainJs() {
 }
 
 function patchAgentPresets() {
-  // dsh ≥ 0.1.2 把 preset 放在 agent-presets 包内（SHIPPED_PRESET_ROOT = <pkg>/presets/）；
-  // 更早的构建放在 config/agent-presets 下。取实际存在的那个。
-  const presetsDir = [
-    resolve(distDir, 'node_modules/@deepseek-ai/dsh-agent-presets/presets'),
-    resolve(distDir, 'config/agent-presets'),
-  ].find((dir) => existsSync(dir));
-  if (presetsDir === undefined) {
+  // dsh ≥ 0.2.0 把 preset 放在 dsh-web-app 包内（每个 preset 一个 <id>.patch.yml，
+  // 结构为单个 - insert: 行，config.plugins: 数组内嵌各插件行）。更早版本放在
+  // dsh-agent-presets 包 / config/agent-presets 下，已不存在，不再查找。
+  const presetsDir = resolve(distDir, 'node_modules/@deepseek-ai/dsh-web-app/presets');
+  if (!existsSync(presetsDir)) {
     console.warn('[collect-dsh] agent-presets 目录缺失，跳过 preset 补丁');
     return;
   }
   let disabled = 0;
   let ensuredTotal = 0;
-  for (const name of readdirSync(presetsDir)) {
-    const file = resolve(presetsDir, name, 'agent.cordis.yml');
-    if (!existsSync(file)) continue;
+  const names = readdirSync(presetsDir).filter((n) => n.endsWith('.patch.yml')).sort();
+  for (const name of names) {
+    const file = resolve(presetsDir, name);
     const lines = readFileSync(file, 'utf8').split('\n');
     const out = [];
     let disabledHere = 0;
@@ -524,21 +533,22 @@ function patchAgentPresets() {
       const m = TOP_ROW_RE.exec(line);
       const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
       if (reason === undefined) continue;
-      // 收集该 row 的后续 2 空格缩进行（4 空格的 config 嵌套内容不计入）。
+      // 收集该顶层插件行（10 空格 `- id:`）的后续 12 空格键行（14 空格的 group 内层行不计入，
+      // 以免越过 tool-fs-search 的 config: 子块或误伤 minimal 的嵌套持久 shell 组）。
       const block = [];
       let j = i + 1;
-      while (j < lines.length && /^  \S/.test(lines[j])) { block.push(lines[j]); j++; }
-      const hasDisabled = block.some(b => /^  disabled:/.test(b));
+      while (j < lines.length && /^            \S/.test(lines[j])) { block.push(lines[j]); j++; }
+      const hasDisabled = block.some((b) => /^            disabled:/.test(b));
       let inserted = false;
       for (const b of block) {
-        if (/^  disabled:/.test(b)) {
+        if (/^            disabled:/.test(b)) {
           if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
-          out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          out.push(`${KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
           disabledHere++;
         } else {
           out.push(b);
-          if (!hasDisabled && !inserted && /^  name:/.test(b)) {
-            out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          if (!hasDisabled && !inserted && /^            name:/.test(b)) {
+            out.push(`${KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
             inserted = true; disabledHere++;
           }
         }

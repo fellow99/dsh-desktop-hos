@@ -172,10 +172,11 @@ const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
  * session.create 报 agent-preset-invalid（工作区选不中、点聊天反复弹「选择工作区」）。preset 审计
  * inactiveRows 会跳过 disabled: true 的行，禁用后 preset 可正常挂载。幂等：已禁用则不重复改写。
  */
+// 注：0.2.0 的 preset 文件里没有 10 空格的 `persistent-shell` 顶层行（minimal 的持久 shell
+// 组是 14 空格嵌套在 persistent-shell group 内，补丁不认），故不再列入禁用表 —— 避免误伤 minimal。
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': 'bash 终端依赖 shell/node-pty（MVP 已禁用）',
   'tool-fs-search': '内容搜索依赖 subprocess 跑 ripgrep（node-pty 已禁用）',
-  'persistent-shell': '持久 shell 依赖 pty（node-pty 已禁用）',
 };
 
 /**
@@ -226,10 +227,17 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   },
 ];
 
-const HARMONY_TOP_ROW_RE = /^- id: ([A-Za-z0-9_-]+)\s*$/;
+// dsh ≥ 0.2.0 的 preset 文件是「一个 - insert: 行内嵌 config.plugins: 数组」：插件行以 10 空格
+// `- id:` 起始，其 name:/disabled:/config: 等键为 12 空格，cordis:group 的内层子行为 14 空格。
+// 补丁只认 10 空格的顶层插件行；14 空格的嵌套行（如 minimal 的 terminal-bash / persistent-bash）
+// 一律不动，避免误伤 minimal 的持久 shell 组。
+const HARMONY_TOP_ROW_RE = /^          - id: ([A-Za-z0-9_-]+)\s*$/;
+const HARMONY_TOP_ROW_INDENT = '          '; // 10 空格：顶层插件行 `- id:` 的缩进
+const HARMONY_KEY_INDENT = '            ';   // 12 空格：行内 name:/disabled: 等键的缩进
 const HARMONY_MARKER = '# HarmonyOS:';
 
-/** preset 顶层（列 0）是否已有该 id 的行；group 内 4 空格缩进的嵌套行不算。 */
+/** 本 preset 的 config.plugins 数组顶层（10 空格 `- id:`）是否已有该 id 的行；
+ *  cordis:group 内 14 空格的嵌套行不算（minimal 的 terminal-bash / persistent-bash 即属此类）。 */
 function hasTopLevelPresetRow(lines, id) {
   for (const line of lines) {
     const m = HARMONY_TOP_ROW_RE.exec(line);
@@ -238,13 +246,17 @@ function hasTopLevelPresetRow(lines, id) {
   return false;
 }
 
+/** 按 HARMONY_ENSURED_PRESET_ROWS 追加缺失的顶层插件行；返回追加数。
+ *  行以 10 空格 `- id:` / 12 空格 `name:` 追加到文件末尾（即 config.plugins 数组末），
+ *  与数组内既有行的缩进一致；idempotency 由 hasTopLevelPresetRow（按 id）保证。 */
 function ensurePresetRows(out) {
   let ensured = 0;
   for (const spec of HARMONY_ENSURED_PRESET_ROWS) {
     if (spec.requireRow !== undefined && !hasTopLevelPresetRow(out, spec.requireRow)) continue;
     if (hasTopLevelPresetRow(out, spec.id)) continue;
-    while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
-    out.push('', `# ${spec.reason}`, `- id: ${spec.id}`, `  name: '${spec.name}'`, '');
+    out.push(`# ${spec.reason}`);
+    out.push(`${HARMONY_TOP_ROW_INDENT}- id: ${spec.id}`);
+    out.push(`${HARMONY_KEY_INDENT}name: '${spec.name}'`);
     ensured++;
   }
   return ensured;
@@ -252,18 +264,15 @@ function ensurePresetRows(out) {
 
 function patchAgentPresetsRuntime() {
   const { readdirSync: rd, existsSync: ex, readFileSync: rf, writeFileSync: wf } = require('node:fs');
-  // dsh ≥ 0.1.2 ships presets inside the agent-presets package (SHIPPED_PRESET_ROOT =
-  // `<pkg>/presets/`); earlier builds kept them under config/agent-presets. Use whichever exists.
-  const presetsDir = [
-    join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
-    join(DSH_ROOT, 'config', 'agent-presets'),
-  ].find(ex);
-  if (presetsDir === undefined) return;
+  // dsh ≥ 0.2.0 ships presets inside the dsh-web-app package (`<pkg>/presets/<id>.patch.yml`,
+  // one `- insert:` row per file with a nested `config.plugins:` array); earlier builds kept them
+  // in the agent-presets package or config/agent-presets, which no longer exist.
+  const presetsDir = join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'presets');
+  if (!ex(presetsDir)) return;
   let total = 0;
   let ensuredTotal = 0;
-  for (const name of rd(presetsDir)) {
-    const file = join(presetsDir, name, 'agent.cordis.yml');
-    if (!ex(file)) continue;
+  for (const name of rd(presetsDir).filter((n) => n.endsWith('.patch.yml')).sort()) {
+    const file = join(presetsDir, name);
     const lines = rf(file, 'utf8').split('\n');
     const out = [];
     const totalBefore = total;
@@ -273,21 +282,22 @@ function patchAgentPresetsRuntime() {
       const m = HARMONY_TOP_ROW_RE.exec(line);
       const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
       if (reason === undefined) continue;
-      // 收集该顶层 row 的 2 空格缩进行（4 空格 config 嵌套内容不计入）。
+      // 收集该顶层插件行（10 空格 `- id:`）的后续 12 空格键行（14 空格的 group 内层行不计入，
+      // 以免越过 tool-fs-search 的 config: 子块或误伤 minimal 的嵌套持久 shell 组）。
       const block = [];
       let j = i + 1;
-      while (j < lines.length && /^  \S/.test(lines[j])) { block.push(lines[j]); j++; }
-      const hasDisabled = block.some(b => /^  disabled:/.test(b));
+      while (j < lines.length && /^            \S/.test(lines[j])) { block.push(lines[j]); j++; }
+      const hasDisabled = block.some(b => /^            disabled:/.test(b));
       let inserted = false;
       for (const b of block) {
-        if (/^  disabled:/.test(b)) {
+        if (/^            disabled:/.test(b)) {
           if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
-          out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          out.push(`${HARMONY_KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
           total++;
         } else {
           out.push(b);
-          if (!hasDisabled && !inserted && /^  name:/.test(b)) {
-            out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          if (!hasDisabled && !inserted && /^            name:/.test(b)) {
+            out.push(`${HARMONY_KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
             inserted = true; total++;
           }
         }
