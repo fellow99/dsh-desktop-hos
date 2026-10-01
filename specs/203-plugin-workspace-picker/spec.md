@@ -12,9 +12,10 @@
 
 本插件是 **dual-face 装配式插件**：
 
-- Host 面为空 apply，仅使包进入 Loader roster（对齐 browse 包 node 半写法）。
-- Client 面声明 `dsh.client`，经 `ctx.slots.register` 把自定义对话框组件填进 ui-workspace 的两个 directory-flow single slot。
-- 目录数据复用 browse 后端 Typert RPC（命名空间 `directoryPicker`，方法 `list` / `createDirectory`），不自实现文件系统。
+- Host 面注册**插件自有的原生能力 IPC 桥**（`ipcMain.handle`）：主目录路径解析（含沙箱根自动创建）与权限三动作（`CheckPermissions` / `RequestPermissionCode` / 打开本应用系统设置页）。这些 ArkTS/Node 能力只存在于主进程，渲染进程不可直达，故由插件 Host 面经 Electron `ipcMain`/`ipcRenderer` 暴露给本插件 Client 面。该桥是**原生能力桥**（同 sharp stub 经 `systemPreferences.callArkTSAsyncFunction` 触达 ArkTS 的性质），不是业务数据面，不承载会话/工作区数据。
+- 「去系统设置」经真机实测确定走 **`ElectronApp.OpenApplicationInfoEntry`**（内部以 proven 的 `uri: application_info_entry` + `parameters.pushParams: <bundleName>` 深链到本应用信息页，可见「文件和文件夹」权限开关）；**不**用 `ContextPathAdapter.ShowSystemSettings`——其 `parameters.subUri` 写法被真机 Settings 忽略，只会落在设置首页。
+- Client 面声明 `dsh.client`，经 `ctx.slots.register` 把自定义对话框组件填进 ui-workspace 的两个 directory-flow single slot；主目录与权限动作经上述插件自有 IPC 桥调用。
+- 目录数据仍复用 browse 后端 Typert RPC（命名空间 `directoryPicker`，方法 `list` / `createDirectory`），不自实现文件系统。
 
 完整设计来源：[`docs/203-插件-选择工作区目录.md`](../../docs/203-插件-选择工作区目录.md)。
 
@@ -29,7 +30,7 @@
 
 **包含**：
 
-- 插件本体：`dsh-desktop-hos/plugins/harmony-plugin-workspace-picker/` 下 Host 面（`lib/index.js`）、Client 面（`lib/client.js` 及其源结构）、`package.json`、README。
+- 插件本体：`dsh-desktop-hos/plugins/harmony-plugin-workspace-picker/` 下 Host 面（`lib/index.js`，注册插件自有原生能力 IPC 桥）、Client 面（`lib/client.js` 及其源结构）、`package.json`、README。
 - Profile 装配：`profiles/desktop/cordis.patch.yml` 禁用 `directory-picker`（auto）行，静态直挂 browse 后端行与本插件根 Loader 行。
 - 构建期物化：沿用 `collectPlugins()` 的 `harmony-plugin-*` 通配自动发现，物化到 `dsh-dist/node_modules/<包名>/`。
 - 运行期镜像：沿用 `ensureDshPluginsProfileLink()` 复制到 `$DSH_HOME/profiles/node_modules/` 并清理同族陈旧目录。
@@ -62,8 +63,10 @@
 
 ### FR-2 主目录解析
 
-- FR-2.1 沙箱主目录 = `join(app.getPath('userData'), 'workspace')`（真机 `/data/storage/el2/base/files/workspace`）；打开对话框时检查，不存在则 `mkdir { recursive: true }` 自动创建。
-- FR-2.2 桌面/文档/下载从 `DSH_EXTRA_WRITABLE_ROOTS` 按固定顺序解析：Desktop、Documents、Download。
+> 主目录解析只在主进程成立（渲染进程 `HOME` 指向 `/storage/Users/currentUser` 而非沙箱，且 `DSH_EXTRA_WRITABLE_ROOTS` 在渲染进程不可见），故经插件 Host 面的原生能力 IPC 桥返回，Client 不直接读环境变量。
+
+- FR-2.1 沙箱主目录 = `join(app.getPath('userData'), 'workspace')`（真机 `/data/storage/el2/base/files/workspace`）；Host 桥解析时检查，不存在则 `mkdir { recursive: true }` 自动创建，再返回绝对路径。
+- FR-2.2 桌面/文档/下载由 Host 桥从 `DSH_EXTRA_WRITABLE_ROOTS` 按固定顺序解析：Desktop、Documents、Download。
 - FR-2.3 解析失败时对应 Tab 内容区显示不可用说明与重试入口，不回退其他主目录。
 
 ### FR-3 目录浏览（Miller 列）
@@ -88,8 +91,10 @@
 
 ### FR-6 授权处理
 
-- FR-6.1 列目录返回 `EACCES`/`EPERM` 时先经 `PermissionManagerAdapter.CheckPermissions` 预检；未授权则在对话框内经 `RequestPermissionCode` 主动弹系统授权窗，按钮 loading。
-- FR-6.2 授权成功（回调 0）自动重试列目录；拒绝时展示原因 + 「去系统设置」（`ShowSystemSettings`），返回后手动重试。
+> `PermissionManagerAdapter.*` 经 JSBind 仅暴露给主进程（`systemPreferences.callArkTSAsyncFunction`），渲染进程 `require('electron')` 无 `systemPreferences`，故预检/主动申请经插件 Host 面的原生能力 IPC 桥调用：通道入参为权限类型字符串，返回 ArkTS 回调值；「去系统设置」改用同样经主进程可达的 `ElectronApp.OpenApplicationInfoEntry`（见 §1.1）。
+
+- FR-6.1 列目录返回 `EACCES`/`EPERM` 时先经 Host 桥 `CheckPermissions` 预检；未授权则在对话框内经 Host 桥 `RequestPermissionCode` 主动弹系统授权窗，按钮 loading。
+- FR-6.2 授权成功（ArkTS 回调 `0`）自动重试列目录；拒绝时展示原因 + 「去系统设置」（Host 桥经 `ElectronApp.OpenApplicationInfoEntry` 深链到本应用信息页），返回后手动重试。
 - FR-6.3 授权桥不可用或无 active context 时明确归因提示，不静默失败。
 
 ### FR-7 主目录记忆
@@ -134,8 +139,8 @@
 ## 6. 约束
 
 - 零上游改动（constitution §1.1）：不改 dsh 源码，不新增补丁，不 fork Web UI。
-- 只写装配代码（constitution §1.3）：复用 browse 后端、client-modules、JSBind 权限桥。
-- 同源数据面（constitution §1.4）：数据走 Typert RPC，无新 IPC/CORS/自定义协议。
+- 只写装配代码（constitution §1.3）：复用 browse 后端、client-modules、JSBind 权限桥；插件 Host 面只新增**插件自有原生能力桥**（根解析 + 权限三动作），不复制业务逻辑。
+- 同源业务数据面（constitution §1.4）：工作区/会话数据走 Typert RPC，无新业务 IPC/CORS/自定义协议；唯一的例外是插件内部的原生能力 IPC 桥，它不承载业务数据，仅在插件 Host/Client 两面之间传递根路径与权限结果。
 - 沙箱边界（constitution §2.2）：HOME 仍指向沙箱；用户目录仅经既有授权访问。
 - 禁 symlink；插件目录与包名一致。
 - 提交信息遵循 Conventional Commits，经 git-commit 技能流程生成。

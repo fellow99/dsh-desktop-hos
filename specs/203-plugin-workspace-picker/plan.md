@@ -21,15 +21,15 @@
 | ui-slots / ui-renderer | dsh 包 | React 插槽注册与渲染 |
 | ui-primitives | dsh 包 | 共享控件（按钮、Modal、图标） |
 | locale | dsh 包 | 文案字典与 `t` |
-| JSBind 权限桥 | web_engine | `CheckPermissions` / `RequestPermissionCode` / `ShowSystemSettings` |
+| JSBind 权限桥 | web_engine | `CheckPermissions` / `RequestPermissionCode`（经 `PermissionManagerAdapter`）；去设置页走 `ElectronApp.OpenApplicationInfoEntry`（真机实测 `ContextPathAdapter.ShowSystemSettings` 不能深链到应用页） |
 
 ## 2. 宪法合规检查
 
 | 宪法原则 | 状态 | 说明 |
 |---|---|---|
 | §1.1 零上游改动 / 不 fork UI | ✅ | 仅经 slot 接缝替换；无 dsh 源码改动、无新补丁 |
-| §1.3 只写装配代码 | ✅ | 复用 browse 原语、client-modules、JSBind |
-| §1.4 同源数据面 | ✅ | Typert RPC `directoryPicker` 命名空间 |
+| §1.3 只写装配代码 | ✅ | 复用 browse 原语、client-modules、JSBind；Host 面仅新增插件自有原生能力桥 |
+| §1.4 同源业务数据面 | ✅ | 业务数据走 Typert RPC `directoryPicker`；唯一例外是插件内部原生能力桥（根路径 + 权限），不承载业务数据 |
 | §2.1 安全围栏 | ✅ | 不触碰 loopback 围栏；沿用 ACL/可写根 |
 | §2.2 沙箱边界 | ✅ | HOME 指向沙箱；根围栏限制越界 |
 | §5.1 幂等构建 | ✅ | collect 与镜像均为可重复覆盖 |
@@ -50,14 +50,14 @@
 
 | 文件 | 职责 |
 |---|---|
-| `lib/index.js` | 命名导出 `name` / `inject` / `apply`（无 default export）；apply 空占位，保持 Loader roster 身份 |
+| `lib/index.js` | 命名导出 `name` / `inject` / `apply`（无 default export）；apply 注册插件自有原生能力 IPC 桥：`ipcMain.handle` 通道（根解析含沙箱根 ensure；权限 check/request/settings 经 `systemPreferences.callArkTSAsyncFunction`） |
 
 ### 4.2 插件 Client 面
 
 | 符号 | 职责 |
 |---|---|
 | `RootTabs` | 四主目录 Tab 渲染与切换事件 |
-| `RootResolver` | root id → 绝对路径；沙箱根 ensure；用户目录根解析 `DSH_EXTRA_WRITABLE_ROOTS` |
+| `RootResolver` | 经 Host 桥 root id → 绝对路径；沙箱根 ensure 与 `DSH_EXTRA_WRITABLE_ROOTS` 解析均在 Host 面 |
 | `MillerBrowser` | Miller 列：列目录、列栈、截断面包屑、hidden 过滤、truncated |
 | `NewFolderModal` | 默认名去重、createDirectory、成功后选中 |
 | `PermissionGate` | EACCES/EPERM → 预检/主动申请/重试/去设置 |
@@ -90,9 +90,9 @@
 
 交互期
   添加工作区 → flowOwner.open
-  RootResolver(rootId) → 根绝对路径（sandbox 自动 ensure）
+  Host 桥 resolveRoot(rootId) → 根绝对路径（Host 面 sandbox 自动 ensure）
   directoryPicker/list(root) → MillerBrowser
-      EACCES/EPERM → PermissionGate
+      EACCES/EPERM → Host 桥 check/request 权限 → PermissionGate
   下钻/面包屑（≤root）/ 新建文件夹
   打开 → onPicked(abs) → createWorkspace → onPick / 错误 Modal
 ```
@@ -132,6 +132,7 @@
 | D3 | 沙箱根 = userData/workspace | userData 根 / $DSH_HOME | 与配置数据隔离、自动创建 |
 | D4 | 只向下、无手输路径、无隐藏开关 | 全文件系统 | 边界清晰、错误面小 |
 | D5 | 只记主目录不记子路径 | 完整路径记忆 | 失效路径容错成本低 |
+| D6 | 插件 Host 面注册自有原生能力 IPC 桥 | 改 wrapper src-main/preload；新增 Typert @Remote verb | 真机实测：权限桥与根解析仅主进程可达，渲染进程无 `systemPreferences`、无 `DSH_EXTRA_WRITABLE_ROOTS`；桥完全封装在插件内（不改 dsh 源码、不改 wrapper 核心文件），且是原生能力桥而非业务数据面，不违反 §1.4 的业务数据同源原则 |
 
 ## 10. 待确认
 

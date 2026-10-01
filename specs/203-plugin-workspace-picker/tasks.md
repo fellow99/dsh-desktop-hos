@@ -8,7 +8,7 @@
 | ID | 任务 | 落点 | 依赖 | 验收 |
 |---|---|---|---|---|
 | T1 | 插件包骨架：`package.json`（name、exports、dsh.client、peerDependencies） | `plugins/harmony-plugin-workspace-picker/` | — | 包名/声明校验通过 |
-| T2 | Host 面：空 apply 命名导出 | `lib/index.js` | T1 | 无 default export |
+| T2 | Host 面：命名导出，apply 注册插件自有原生能力 IPC 桥（根解析 + 权限三动作） | `lib/index.js` | T1 | 无 default export；桥经 ipcMain/ipcRenderer 往返成立 |
 | T3 | Client 构建：打包配置（tsdown/等价）输出 lazy-CJS factory `lib/client.js` | 构建配置 | T1 | `window.__ModuleLoader__.load` 形态 |
 | T4 | `RootResolver`：四主目录路径解析 + 沙箱根自动创建 | client | T2 | FR-2 |
 | T5 | `RootTabs`：四 Tab 切换 | client | T4 | FR-1 |
