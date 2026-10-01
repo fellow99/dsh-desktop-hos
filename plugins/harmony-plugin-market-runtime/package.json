@@ -1,0 +1,27 @@
+{
+  "name": "harmony-plugin-market-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HarmonyOS DSH plugin: provides the market's desktopProfiles/desktopPnpm contract backed by an in-process (worker-thread) pure-JS pnpm engine, so dsh-market can install plugins without spawning node/pnpm children",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node tests/pnpm-inprocess.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  }
+}

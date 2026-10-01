@@ -1,0 +1,8 @@
+packages:
+  - .
+
+nodeLinker: hoisted
+packageImportMethod: copy
+ignoreScripts: true
+minimumReleaseAge: 0
+storeDir: .pnpm-store

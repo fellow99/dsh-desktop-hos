@@ -1,0 +1,9 @@
+# dsh bundle patch: inserts this plugin into a profile's layer stack.
+#
+# This bundle MUST be listed BEFORE `dshmarket` in the profile's
+# `dsh.profile.bundles`, so its row mounts first and provides the
+# `desktopProfiles` / `desktopPnpm` services before dsh-market's apply reads
+# `ctx.get('desktopProfiles')`.
+- insert:
+    - id: harmony-market-runtime
+      name: 'harmony-plugin-market-runtime'

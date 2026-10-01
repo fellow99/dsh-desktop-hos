@@ -23,6 +23,20 @@ const distDir = resolve(projectRoot, 'dsh-dist');
 const betterSqliteArchive = resolve(projectRoot, '../harmonypc-electron-versions/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz');
 const requireBuiltinNode = resolve(projectRoot, 'native/require-builtin/require_builtin.node');
 
+/**
+ * Pinned pure-JS pnpm engine version (spec 012). Materialized by
+ * `collectMarketPNPM()` and asserted before it is recorded as ready.
+ * See `docs/012-pnpm+dsh-market.md` and `logs/20261002-1/spike-pnpm-FINDINGS.md`.
+ */
+const PNPM_VERSION = '11.28.3';
+
+/**
+ * Pinned dsh-market version — the single source of truth asserted at build
+ * time (`assertDshMarketVersion()`), replacing the previously inconsistent
+ * README / profile / spec declarations.
+ */
+const DSH_MARKET_VERSION = '1.66.7';
+
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);
   execSync(cmd, { cwd, stdio: 'inherit' });
@@ -702,11 +716,110 @@ function stageAddonBinariesForLinkerRetry() {
   console.log('[collect-dsh] require_builtin.node + better_sqlite3.node 已投放到 electron/libs/arm64-v8a');
 }
 
+/**
+ * 断言同级 dsh-market 的版本与固定常量一致（spec 012 / 201 FR-201-018）。
+ * 消除此前 README/profile/spec 三处版本声明不一致、构建期无法察觉的问题。
+ */
+function assertDshMarketVersion() {
+  const pkgPath = resolve(projectRoot, '../dsh-market/package.json');
+  if (!existsSync(pkgPath)) {
+    console.error(`[collect-dsh] dsh-market 未找到: ${pkgPath}`);
+    process.exit(1);
+  }
+  let version;
+  try {
+    version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+  } catch (err) {
+    console.error(`[collect-dsh] dsh-market package.json 无法解析: ${err.message}`);
+    process.exit(1);
+  }
+  if (version !== DSH_MARKET_VERSION) {
+    console.error(`[collect-dsh] dsh-market 版本不符: 期望 ${DSH_MARKET_VERSION}，实际 ${version}`
+      + ` —— 更新 scripts/collect-dsh.mjs 的 DSH_MARKET_VERSION、profiles/desktop/package.json、README 与 specs/201-dsh-market 后再构建`);
+    process.exit(1);
+  }
+  console.log(`[collect-dsh] dsh-market 版本断言通过 (${version})`);
+}
+
+/**
+ * 清理 pnpm 引擎中非目标平台的产物以控体积 / 避免 rpmbuild 处理非目标架构 .node：
+ *  - `dist/node_modules/@reflink/reflink-{darwin,win32}-*`（clone 导入法的平台二进制，copy 路径不加载）
+ *  - `dist/vendor/*.exe`（Windows 专用辅助程序）
+ *  - `CHANGELOG.md`
+ */
+function prunePnpmEngine(root) {
+  const reflinkDir = resolve(root, 'dist/node_modules/@reflink');
+  if (existsSync(reflinkDir)) {
+    for (const entry of readdirSync(reflinkDir)) {
+      if (/^reflink-(darwin|win32)/.test(entry)) {
+        rmSync(resolve(reflinkDir, entry), { recursive: true, force: true });
+        console.log(`[collect-dsh] 清理 pnpm 非目标平台 reflink: ${entry}`);
+      }
+    }
+  }
+  const vendorDir = resolve(root, 'dist/vendor');
+  if (existsSync(vendorDir)) {
+    for (const entry of readdirSync(vendorDir)) {
+      if (entry.endsWith('.exe')) {
+        rmSync(resolve(vendorDir, entry), { force: true });
+        console.log(`[collect-dsh] 清理 pnpm Windows 辅助 exe: ${entry}`);
+      }
+    }
+  }
+  const changelog = resolve(root, 'CHANGELOG.md');
+  if (existsSync(changelog)) rmSync(changelog, { force: true });
+}
+
+/**
+ * 物化纯 JS pnpm 引擎（`pnpm` 包）到 `dsh-dist/node_modules/pnpm`（spec 012 FR-012-001~004）。
+ *
+ * 引擎选型见 docs/012-pnpm+dsh-market.md：采用自带打包 CLI 的 `pnpm` 包（进程内由
+ * `harmony-plugin-market-runtime` 在 worker 线程中 import 其 `dist/pnpm.mjs`）。
+ * 以宿主 pnpm 安装到临时目录后整包拷贝；版本不符即硬失败；幂等。
+ */
+function collectMarketPNPM() {
+  const dest = resolve(distDir, 'node_modules/pnpm');
+  if (existsSync(resolve(dest, 'package.json'))) {
+    console.log('[collect-dsh] pnpm 引擎已物化');
+    return;
+  }
+  const staging = resolve(projectRoot, '.pnpm-engine-staging');
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  writeFileSync(resolve(staging, 'package.json'),
+    JSON.stringify({ name: 'pnpm-engine-staging', version: '0.0.0', private: true }, null, 2) + '\n');
+  try {
+    run(`pnpm add pnpm@${PNPM_VERSION} --config.node-linker=hoisted --ignore-scripts`, staging);
+    const src = resolve(staging, 'node_modules/pnpm');
+    if (!existsSync(resolve(src, 'package.json'))) {
+      console.error(`[collect-dsh] pnpm 引擎物化失败（未落地）: ${src}`);
+      process.exit(1);
+    }
+    const got = JSON.parse(readFileSync(resolve(src, 'package.json'), 'utf8')).version;
+    if (got !== PNPM_VERSION) {
+      console.error(`[collect-dsh] pnpm 引擎版本不符: 期望 ${PNPM_VERSION}，实际 ${got}`);
+      process.exit(1);
+    }
+    cpSync(src, dest, { recursive: true, dereference: true });
+    prunePnpmEngine(dest);
+    if (!existsSync(resolve(dest, 'dist/pnpm.mjs'))) {
+      console.error(`[collect-dsh] pnpm 引擎入口缺失: ${resolve(dest, 'dist/pnpm.mjs')}`);
+      process.exit(1);
+    }
+    console.log(`[collect-dsh] pnpm 引擎已物化 (pnpm@${PNPM_VERSION})`);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 // 0. 校验
 if (!existsSync(dshRoot)) {
   console.error(`[collect-dsh] dsh 未找到: ${dshRoot}`);
   process.exit(1);
 }
+
+// 0b. dsh-market 版本断言（spec 012/201）
+assertDshMarketVersion();
 
 // 1. 清理旧产物
 if (existsSync(distDir)) rmSync(distDir, { recursive: true, force: true });
@@ -785,5 +898,8 @@ collectDshMarket();
 //     刻意放在最后：此前所有清理动作（.pnpm 删除、非目标架构 prebuilds 剪裁）都已跑完，
 //     插件目录落在 dsh-dist.tar.gz 内，不经过 resfile/app 的 demo 清理，故无需 keep 白名单。
 collectPlugins();
+
+// 10b. 物化纯 JS pnpm 引擎（spec 012）：dsh-dist/node_modules/pnpm（进程内安装引擎）。
+collectMarketPNPM();
 
 console.log(`\n[collect-dsh] 完成: ${distDir}`);

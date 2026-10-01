@@ -499,6 +499,10 @@ async function startHost() {
   // ensureSandboxHome()（HOME 已指向沙箱目录）；早于 runProfile()（dshmarket 的 spawnEnv() 在调用时读
   // process.env.PATH）。失败仅影响市场安装通道，不阻塞启动。
   setupMarketRuntime({ dshRoot: DSH_ROOT });
+  // 012-pnpm-integration：进程内 pnpm 引擎入口。由 collect-dsh 的 collectMarketPNPM() 物化到
+  // dsh-dist/node_modules/pnpm；harmony-plugin-market-runtime 读 DSH_PNPM_ENGINE 在 worker 中 import 它。
+  process.env.DSH_PNPM_ENGINE = join(DSH_ROOT, 'node_modules', 'pnpm', 'dist', 'pnpm.mjs');
+  console.log('[dsh-harmony] DSH_PNPM_ENGINE =', process.env.DSH_PNPM_ENGINE);
   // 用户目录写入白名单：必须在 runProfile 之前设置，writableRoots 每次围栏判定都读它。
   installExtraWritableRoots();
   process.env.DSH_DISABLE_HMR = '1';
