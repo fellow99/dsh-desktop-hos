@@ -12,7 +12,7 @@
  * （如 cordis-plugin-group、大量 packages 下插件）；② 非 hoisted 的外部依赖（如 zod）。
  */
 import { execSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wrapSharpStubCjs, wrapSharpStubEsm } from './lib/sharp-stub.mjs';
@@ -21,6 +21,7 @@ const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
 const distDir = resolve(projectRoot, 'dsh-dist');
 const betterSqliteArchive = resolve(projectRoot, '../harmonypc-electron-versions/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz');
+const requireBuiltinNode = resolve(projectRoot, 'native/require-builtin/require_builtin.node');
 
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);
@@ -345,6 +346,18 @@ const HARMONY_DISABLED_PRESET_ROWS = {
 };
 
 /**
+ * 禁用 delegation group 内 14 空格嵌套、依赖 PTC 引擎的行（与 src-main/main.js 的
+ * HARMONY_DISABLED_NESTED_PRESET_ROWS 逐条镜像）。
+ * workflow-ptc 是唯一的 workflowEngine 具体实现，依赖 ptcRuntime（需 subprocess/sandbox，均禁用）；
+ * tool-workflow 依赖 workflowEngine。同组 tool-ralph 早已 disabled，此前漏禁这两行。
+ * minimal 无此嵌套行，故不误伤。
+ */
+const HARMONY_DISABLED_NESTED_PRESET_ROWS = {
+  'workflow-ptc': 'PTC workflow 引擎依赖 ptcRuntime（subprocess/sandbox，本平台不可用）',
+  'tool-workflow': 'workflow 工具依赖 workflowEngine（PTC 引擎本平台不可用）',
+};
+
+/**
  * 补齐 preset 中本应用需要、但上游 preset 未挂载的工具行（顶层追加）。
  * 与 src-main/main.js 的 HARMONY_ENSURED_PRESET_ROWS 保持一致：`tool-str-replace-editor` 是纯 JS
  * 工具（inject ['tools','fs']，无 subprocess/原生依赖），其 `view` 对目录经 ctx.fs.listDir 列目录 ——
@@ -393,6 +406,8 @@ const TOP_ROW_RE = /^          - id: ([A-Za-z0-9_-]+)\s*$/;
 const TOP_ROW_INDENT = '          '; // 10 空格：顶层插件行 `- id:` 的缩进
 const KEY_INDENT = '            ';   // 12 空格：行内 name:/disabled: 等键的缩进
 const HARMONY_MARKER = '# HarmonyOS:';
+const NESTED_ROW_RE = /^              - id: ([A-Za-z0-9_-]+)\s*$/; // 14 空格：group config 内嵌套行
+const NESTED_KEY_RE = /^                \S/;                        // 16 空格：嵌套行的键
 
 /** 本 preset 的 config.plugins 数组顶层（10 空格 `- id:`）是否已有该 id 的行；
  *  cordis:group 内 14 空格的嵌套行不算（minimal 的 terminal-bash / persistent-bash 即属此类）。 */
@@ -510,6 +525,42 @@ function assertPresetRowsMirrorMainJs() {
   console.log(`[collect-dsh] preset 行互校通过（${local.length} 条与 src-main/main.js 一致）`);
 }
 
+/**
+ * 禁用 14 空格嵌套行（见 HARMONY_DISABLED_NESTED_PRESET_ROWS）。在顶层行补丁之后跑。
+ * 返回 { lines, count }；幂等。
+ */
+function disableNestedRows(lines) {
+  const out = [];
+  let count = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    out.push(line);
+    const m = NESTED_ROW_RE.exec(line);
+    const reason = m ? HARMONY_DISABLED_NESTED_PRESET_ROWS[m[1]] : undefined;
+    if (reason === undefined) continue;
+    let j = i + 1;
+    const block = [];
+    while (j < lines.length && NESTED_KEY_RE.test(lines[j])) { block.push(lines[j]); j++; }
+    const hasDisabled = block.some((b) => /^                disabled:/.test(b));
+    let inserted = false;
+    for (const b of block) {
+      if (/^                disabled:/.test(b)) {
+        if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
+        out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+        count++;
+      } else {
+        out.push(b);
+        if (!hasDisabled && !inserted && /^                name:/.test(b)) {
+          out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+          inserted = true; count++;
+        }
+      }
+    }
+    i = j - 1;
+  }
+  return { lines: out, count };
+}
+
 function patchAgentPresets() {
   // dsh ≥ 0.2.0 把 preset 放在 dsh-web-app 包内（每个 preset 一个 <id>.patch.yml，
   // 结构为单个 - insert: 行，config.plugins: 数组内嵌各插件行）。更早版本放在
@@ -555,12 +606,15 @@ function patchAgentPresets() {
       }
       i = j - 1; // block 已输出，外层循环从 block 之后继续
     }
-    const ensured = ensurePresetRows(out);
-    disabled += disabledHere;
+    const nested = disableNestedRows(out);
+    const nestedLines = nested.lines;
+    const nestedCount = nested.count;
+    const ensured = ensurePresetRows(nestedLines);
+    disabled += disabledHere + nestedCount;
     ensuredTotal += ensured;
-    if (disabledHere > 0 || ensured > 0) {
-      writeFileSync(file, out.join('\n'));
-      console.log(`[collect-dsh] preset ${name}: 禁用 ${disabledHere} 行、补齐 ${ensured} 行`);
+    if (disabledHere + nestedCount > 0 || ensured > 0) {
+      writeFileSync(file, nestedLines.join('\n'));
+      console.log(`[collect-dsh] preset ${name}: 禁用 ${disabledHere + nestedCount} 行、补齐 ${ensured} 行`);
     }
   }
   console.log(`[collect-dsh] agent preset 补丁完成：禁用 ${disabled} 行、补齐 ${ensuredTotal} 行`);
@@ -590,6 +644,62 @@ function injectBetterSqlite3() {
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+/**
+ * 物化 require-builtin 的 OpenHarmony 可选平台包到 dsh-dist/node_modules。
+ *
+ * node-addon-native-custom-loader 的 loadEntry 先按 optionalPackageName(packagePrefix)
+ * require 「<prefix>-openharmony-arm64」，pnpm deploy 不含此平台包（未发布），故这里手工物化。
+ * 包内 prebuilt/require_builtin.node 是 dlopen 锚点：链接器对 files/ 路径报命名空间不可达，
+ * node_binding.cc 重试到 bundle/libs/arm64/require_builtin.node（由 stageAddonBinariesForLinkerRetry 投放）。
+ * 三处文件须与设备上已验证通过的内容逐字节一致。
+ */
+function materializeRequireBuiltinPlatformPackage() {
+  if (!existsSync(requireBuiltinNode)) {
+    console.error(`[collect-dsh] require_builtin.node 缺失: ${requireBuiltinNode}（先构建 native/require-builtin）`);
+    process.exit(1);
+  }
+  const pkgDir = resolve(distDir, 'node_modules/node-addon-require-builtin-openharmony-arm64');
+  rmSync(pkgDir, { recursive: true, force: true });
+  mkdirSync(resolve(pkgDir, 'lib'), { recursive: true });
+  mkdirSync(resolve(pkgDir, 'prebuilt'), { recursive: true });
+  writeFileSync(
+    resolve(pkgDir, 'package.json'),
+    JSON.stringify({
+      name: 'node-addon-require-builtin-openharmony-arm64',
+      version: '0.1.6',
+      type: 'commonjs',
+      main: 'lib/index.js',
+    }) + '\n',
+  );
+  writeFileSync(
+    resolve(pkgDir, 'lib/index.js'),
+    '"use strict";\nconst path = require(\'path\');\nconst binding = require(path.join(__dirname, \'..\', \'prebuilt\', \'require_builtin.node\'));\nmodule.exports = binding;\n',
+  );
+  cpSync(requireBuiltinNode, resolve(pkgDir, 'prebuilt/require_builtin.node'));
+  console.log('[collect-dsh] require-builtin 平台包已物化到 dsh-dist/node_modules');
+}
+
+/**
+ * 把 require_builtin.node 与 better_sqlite3.node 投放到 electron/libs/arm64-v8a。
+ *
+ * HarmonyOS 链接器命名空间（default/ndk/moduleNs_default）不能访问 app files/ 沙箱，
+ * 任何从 files/ dlopen 的 .node 都失败（含已知可用的 better_sqlite3.node）；
+ * node_binding.cc 的重试把同名文件映射到 namespace 可达的 bundle/libs/arm64/。
+ * collectAllLibs:true 会把 libs/arm64-v8a 下的文件（含非 lib*.so 的 .node）一并打入 HAP。
+ */
+function stageAddonBinariesForLinkerRetry() {
+  const libsDir = resolve(projectRoot, 'electron/libs/arm64-v8a');
+  const bs3Node = resolve(distDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node');
+  if (!existsSync(bs3Node)) {
+    console.error(`[collect-dsh] better_sqlite3.node 缺失: ${bs3Node}（injectBetterSqlite3 未生效）`);
+    process.exit(1);
+  }
+  mkdirSync(libsDir, { recursive: true });
+  cpSync(requireBuiltinNode, resolve(libsDir, 'require_builtin.node'));
+  cpSync(bs3Node, resolve(libsDir, 'better_sqlite3.node'));
+  console.log('[collect-dsh] require_builtin.node + better_sqlite3.node 已投放到 electron/libs/arm64-v8a');
 }
 
 // 0. 校验
@@ -634,6 +744,13 @@ applySharpStub();
 
 // 6d. 注入 better-sqlite3 v138（Windows 不安装 native addon，部署包使用 OpenHarmony aarch64 成品）
 injectBetterSqlite3();
+
+// 6f. 物化 require-builtin OpenHarmony 平台包（loader optional-package 锚点）
+materializeRequireBuiltinPlatformPackage();
+
+// 6g. 把 require_builtin.node + better_sqlite3.node 投放到 electron/libs/arm64-v8a
+//     （files/ 链接器命名空间不可达，node_binding.cc 重试到 bundle/libs/arm64）
+stageAddonBinariesForLinkerRetry();
 
 // 6e. 先互校两处 preset 行（与 src-main/main.js 逐条一致），再适配 agent preset
 //     （禁用依赖 shell/subprocess/pty 的行，补齐列目录工具行）

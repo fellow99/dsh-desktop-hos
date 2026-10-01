@@ -11,13 +11,13 @@
 const { app, BrowserWindow, Menu, screen } = require('electron');
 const {
   accessSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync,
-  writeFileSync, writeSync, openSync, closeSync, createReadStream,
+  writeFileSync,
 } = require('node:fs');
-const { createGunzip } = require('node:zlib');
 const { join, dirname, delimiter } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { networkInterfaces } = require('node:os');
 const { setupMarketRuntime } = require('./market-runtime.js');
+const { extractTarGz } = require('./tar-extract.js');
 
 // ── 启动 loading 页 ─────────────────────────────────────────────────
 // 首次启动解压 dsh-dist.tar.gz 耗时较长（~45s），期间用内联 loading 页提示用户等待初始化。
@@ -74,66 +74,6 @@ function getDshRoot() {
   return join(app.getPath('userData'), 'dsh-dist');
 }
 
-/**
- * 极简 ustar 流式解压（bsdtar --format=ustar，无符号链接、无 pax 扩展头，仅文件/目录）。
- * 用 createGunzip 流式解压，逐条目落盘，避免把 555MB 产物一次性载入内存（移动设备 OOM）。
- */
-function extractTarGz(archivePath, destBase) {
-  return new Promise((resolve, reject) => {
-    const gunzip = createGunzip();
-    const input = createReadStream(archivePath);
-    let buf = Buffer.alloc(0);
-    let offset = 0;
-    let count = 0;
-    let ended = false;
-
-    const process = () => {
-      while (!ended && buf.length - offset >= 512) {
-        const header = buf.subarray(offset, offset + 512);
-        if (header[0] === 0) { ended = true; break; } // 结束块
-        const name = header.subarray(0, 100).toString('utf8').replace(/\0[\s\S]*$/, '');
-        const prefix = header.subarray(345, 500).toString('utf8').replace(/\0[\s\S]*$/, '');
-        const sizeStr = header.subarray(124, 136).toString('utf8').replace(/\0[\s\S]*$/, '').trim();
-        const size = parseInt(sizeStr, 8) || 0;
-        const typeflag = String.fromCharCode(header[156]);
-        let fullName = prefix ? prefix + '/' + name : name;
-        // tar 由 `-C <proj> dsh-dist` 打包，条目带 dsh-dist/ 前缀；解压目标已含该目录，剥掉避免双重前缀
-        fullName = fullName.replace(/^\.\//, '').replace(/^dsh-dist\//, '');
-        const dataStart = offset + 512;
-        const paddedEnd = dataStart + Math.ceil(size / 512) * 512;
-        if (buf.length < paddedEnd) break; // 等更多数据
-        if (fullName && !fullName.endsWith('/')) {
-          const destPath = join(destBase, fullName);
-          if (typeflag === '5') {
-            mkdirSync(destPath, { recursive: true });
-          } else if (typeflag === '0' || typeflag === '\u0000' || typeflag === '') {
-            mkdirSync(dirname(destPath), { recursive: true });
-            const fd = openSync(destPath, 'w');
-            writeSync(fd, buf, dataStart, size);
-            closeSync(fd);
-            count++;
-          }
-        }
-        offset = paddedEnd;
-      }
-      // 压缩缓冲区，释放已处理数据
-      if (offset > 0) {
-        buf = Buffer.from(buf.subarray(offset));
-        offset = 0;
-      }
-    };
-
-    gunzip.on('data', (chunk) => {
-      buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
-      process();
-    });
-    gunzip.on('end', () => resolve(count));
-    gunzip.on('error', reject);
-    input.on('error', reject);
-    input.pipe(gunzip);
-  });
-}
-
 /** 确保 dsh 产物就位（首次启动解压 tar.gz 到 userData/dsh-dist）。 */
 async function ensureDshExtracted() {
   DSH_ROOT = getDshRoot();
@@ -177,6 +117,22 @@ const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': 'bash 终端依赖 shell/node-pty（MVP 已禁用）',
   'tool-fs-search': '内容搜索依赖 subprocess 跑 ripgrep（node-pty 已禁用）',
+};
+
+/**
+ * HarmonyOS 运行时补丁：禁用 delegation group 内 14 空格嵌套、依赖 PTC 引擎的行。
+ * 与顶层表不同，这些行嵌在 `isolate: { workflowEngine: true }` 的 cordis:group config 里，
+ * host patch 与顶层行补丁都够不到：
+ *   - workflow-ptc 是唯一的 workflowEngine 具体实现，inject ['subagents','ptcRuntime',...]，
+ *     ptcRuntime 需要 subprocess/sandbox（本平台均禁用）→ 永远 pending；
+ *   - tool-workflow inject ['tools','workflowEngine',...]，workflowEngine 无提供者 → 同样 pending。
+ * 同组的 tool-ralph 早已 disabled: true（同一原因），此前漏禁这两行。
+ * 仅 standard/ptc/cordis 含这些 id；minimal 无此嵌套行，故不会被误伤。
+ * 本表与 collect-dsh.mjs 的同名表逐条镜像，改动需同时改两处。
+ */
+const HARMONY_DISABLED_NESTED_PRESET_ROWS = {
+  'workflow-ptc': 'PTC workflow 引擎依赖 ptcRuntime（subprocess/sandbox，本平台不可用）',
+  'tool-workflow': 'workflow 工具依赖 workflowEngine（PTC 引擎本平台不可用）',
 };
 
 /**
@@ -235,6 +191,8 @@ const HARMONY_TOP_ROW_RE = /^          - id: ([A-Za-z0-9_-]+)\s*$/;
 const HARMONY_TOP_ROW_INDENT = '          '; // 10 空格：顶层插件行 `- id:` 的缩进
 const HARMONY_KEY_INDENT = '            ';   // 12 空格：行内 name:/disabled: 等键的缩进
 const HARMONY_MARKER = '# HarmonyOS:';
+const HARMONY_NESTED_ROW_RE = /^              - id: ([A-Za-z0-9_-]+)\s*$/; // 14 空格：group config 内嵌套行
+const HARMONY_NESTED_KEY_RE = /^                \S/;                        // 16 空格：嵌套行的键
 
 /** 本 preset 的 config.plugins 数组顶层（10 空格 `- id:`）是否已有该 id 的行；
  *  cordis:group 内 14 空格的嵌套行不算（minimal 的 terminal-bash / persistent-bash 即属此类）。 */
@@ -260,6 +218,42 @@ function ensurePresetRows(out) {
     ensured++;
   }
   return ensured;
+}
+
+/**
+ * 禁用 14 空格嵌套行（见 HARMONY_DISABLED_NESTED_PRESET_ROWS）。在顶层行补丁之后跑：
+ * 嵌套行被顶层循环原样透传，这里再扫描一次。返回 { lines, count }；幂等。
+ */
+function disableNestedPresetRows(lines) {
+  const out = [];
+  let count = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    out.push(line);
+    const m = HARMONY_NESTED_ROW_RE.exec(line);
+    const reason = m ? HARMONY_DISABLED_NESTED_PRESET_ROWS[m[1]] : undefined;
+    if (reason === undefined) continue;
+    let j = i + 1;
+    const block = [];
+    while (j < lines.length && HARMONY_NESTED_KEY_RE.test(lines[j])) { block.push(lines[j]); j++; }
+    const hasDisabled = block.some(b => /^                disabled:/.test(b));
+    let inserted = false;
+    for (const b of block) {
+      if (/^                disabled:/.test(b)) {
+        if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
+        out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+        count++;
+      } else {
+        out.push(b);
+        if (!hasDisabled && !inserted && /^                name:/.test(b)) {
+          out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+          inserted = true; count++;
+        }
+      }
+    }
+    i = j - 1;
+  }
+  return { lines: out, count };
 }
 
 function patchAgentPresetsRuntime() {
@@ -304,10 +298,14 @@ function patchAgentPresetsRuntime() {
       }
       i = j - 1;
     }
-    const ensured = ensurePresetRows(out);
+    const nested = disableNestedPresetRows(out);
+    const nestedLines = nested.lines;
+    const nestedCount = nested.count;
+    const ensured = ensurePresetRows(nestedLines);
     ensuredTotal += ensured;
+    total += nestedCount;
     if (total > totalBefore || ensured > 0) {
-      wf(file, out.join('\n'));
+      wf(file, nestedLines.join('\n'));
       console.log(`[dsh-harmony] preset ${name} 已适配：禁用 ${total - totalBefore} 行、补齐 ${ensured} 行`);
     }
   }
@@ -316,15 +314,24 @@ function patchAgentPresetsRuntime() {
   }
 }
 
-/** 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。 */
+/**
+ * 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。
+ *
+ * 不依赖易漂移的构建产物命名 / 文件长度：上游构建曾把薄入口命名为
+ * `profile-boot-<hash>.js`（<300B），新版改为 `profile-boot.js`（310B），实现块为
+ * `profile-boot-<hash>.js`（12KB）。这里用**结构特征**识别：薄入口重导出 runProfile
+ * 但自身不定义该函数；实现块内含 `async function runProfile(...)`，据此排除。
+ */
 function findProfileBootEntry() {
   try {
     const candidates = [];
     for (const file of readdirSync(DSH_CLI_LIB())) {
-      if (!file.startsWith('profile-boot-') || !file.endsWith('.js')) continue;
+      if (!file.startsWith('profile-boot') || !file.endsWith('.js')) continue;
       const fullPath = join(DSH_CLI_LIB(), file);
       const content = readFileSync(fullPath, 'utf8');
-      if (content.includes('export { runProfile') && content.length < 300) {
+      const reExportsRunProfile = /\brunProfile\b/.test(content) && /\bexport\b/.test(content);
+      const definesRunProfile = /function\s+runProfile\s*\(/.test(content) || /\brunProfile\s*=/.test(content);
+      if (reExportsRunProfile && !definesRunProfile) {
         candidates.push({ path: fullPath, mtime: statSync(fullPath).mtimeMs });
       }
     }

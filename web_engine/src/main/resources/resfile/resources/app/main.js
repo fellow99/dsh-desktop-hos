@@ -11,13 +11,13 @@
 const { app, BrowserWindow, Menu, screen } = require('electron');
 const {
   accessSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync,
-  writeFileSync, writeSync, openSync, closeSync, createReadStream,
+  writeFileSync,
 } = require('node:fs');
-const { createGunzip } = require('node:zlib');
 const { join, dirname, delimiter } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { networkInterfaces } = require('node:os');
 const { setupMarketRuntime } = require('./market-runtime.js');
+const { extractTarGz } = require('./tar-extract.js');
 
 // ── 启动 loading 页 ─────────────────────────────────────────────────
 // 首次启动解压 dsh-dist.tar.gz 耗时较长（~45s），期间用内联 loading 页提示用户等待初始化。
@@ -74,66 +74,6 @@ function getDshRoot() {
   return join(app.getPath('userData'), 'dsh-dist');
 }
 
-/**
- * 极简 ustar 流式解压（bsdtar --format=ustar，无符号链接、无 pax 扩展头，仅文件/目录）。
- * 用 createGunzip 流式解压，逐条目落盘，避免把 555MB 产物一次性载入内存（移动设备 OOM）。
- */
-function extractTarGz(archivePath, destBase) {
-  return new Promise((resolve, reject) => {
-    const gunzip = createGunzip();
-    const input = createReadStream(archivePath);
-    let buf = Buffer.alloc(0);
-    let offset = 0;
-    let count = 0;
-    let ended = false;
-
-    const process = () => {
-      while (!ended && buf.length - offset >= 512) {
-        const header = buf.subarray(offset, offset + 512);
-        if (header[0] === 0) { ended = true; break; } // 结束块
-        const name = header.subarray(0, 100).toString('utf8').replace(/\0[\s\S]*$/, '');
-        const prefix = header.subarray(345, 500).toString('utf8').replace(/\0[\s\S]*$/, '');
-        const sizeStr = header.subarray(124, 136).toString('utf8').replace(/\0[\s\S]*$/, '').trim();
-        const size = parseInt(sizeStr, 8) || 0;
-        const typeflag = String.fromCharCode(header[156]);
-        let fullName = prefix ? prefix + '/' + name : name;
-        // tar 由 `-C <proj> dsh-dist` 打包，条目带 dsh-dist/ 前缀；解压目标已含该目录，剥掉避免双重前缀
-        fullName = fullName.replace(/^\.\//, '').replace(/^dsh-dist\//, '');
-        const dataStart = offset + 512;
-        const paddedEnd = dataStart + Math.ceil(size / 512) * 512;
-        if (buf.length < paddedEnd) break; // 等更多数据
-        if (fullName && !fullName.endsWith('/')) {
-          const destPath = join(destBase, fullName);
-          if (typeflag === '5') {
-            mkdirSync(destPath, { recursive: true });
-          } else if (typeflag === '0' || typeflag === '\u0000' || typeflag === '') {
-            mkdirSync(dirname(destPath), { recursive: true });
-            const fd = openSync(destPath, 'w');
-            writeSync(fd, buf, dataStart, size);
-            closeSync(fd);
-            count++;
-          }
-        }
-        offset = paddedEnd;
-      }
-      // 压缩缓冲区，释放已处理数据
-      if (offset > 0) {
-        buf = Buffer.from(buf.subarray(offset));
-        offset = 0;
-      }
-    };
-
-    gunzip.on('data', (chunk) => {
-      buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
-      process();
-    });
-    gunzip.on('end', () => resolve(count));
-    gunzip.on('error', reject);
-    input.on('error', reject);
-    input.pipe(gunzip);
-  });
-}
-
 /** 确保 dsh 产物就位（首次启动解压 tar.gz 到 userData/dsh-dist）。 */
 async function ensureDshExtracted() {
   DSH_ROOT = getDshRoot();
@@ -172,10 +112,27 @@ const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
  * session.create 报 agent-preset-invalid（工作区选不中、点聊天反复弹「选择工作区」）。preset 审计
  * inactiveRows 会跳过 disabled: true 的行，禁用后 preset 可正常挂载。幂等：已禁用则不重复改写。
  */
+// 注：0.2.0 的 preset 文件里没有 10 空格的 `persistent-shell` 顶层行（minimal 的持久 shell
+// 组是 14 空格嵌套在 persistent-shell group 内，补丁不认），故不再列入禁用表 —— 避免误伤 minimal。
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': 'bash 终端依赖 shell/node-pty（MVP 已禁用）',
   'tool-fs-search': '内容搜索依赖 subprocess 跑 ripgrep（node-pty 已禁用）',
-  'persistent-shell': '持久 shell 依赖 pty（node-pty 已禁用）',
+};
+
+/**
+ * HarmonyOS 运行时补丁：禁用 delegation group 内 14 空格嵌套、依赖 PTC 引擎的行。
+ * 与顶层表不同，这些行嵌在 `isolate: { workflowEngine: true }` 的 cordis:group config 里，
+ * host patch 与顶层行补丁都够不到：
+ *   - workflow-ptc 是唯一的 workflowEngine 具体实现，inject ['subagents','ptcRuntime',...]，
+ *     ptcRuntime 需要 subprocess/sandbox（本平台均禁用）→ 永远 pending；
+ *   - tool-workflow inject ['tools','workflowEngine',...]，workflowEngine 无提供者 → 同样 pending。
+ * 同组的 tool-ralph 早已 disabled: true（同一原因），此前漏禁这两行。
+ * 仅 standard/ptc/cordis 含这些 id；minimal 无此嵌套行，故不会被误伤。
+ * 本表与 collect-dsh.mjs 的同名表逐条镜像，改动需同时改两处。
+ */
+const HARMONY_DISABLED_NESTED_PRESET_ROWS = {
+  'workflow-ptc': 'PTC workflow 引擎依赖 ptcRuntime（subprocess/sandbox，本平台不可用）',
+  'tool-workflow': 'workflow 工具依赖 workflowEngine（PTC 引擎本平台不可用）',
 };
 
 /**
@@ -226,10 +183,19 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   },
 ];
 
-const HARMONY_TOP_ROW_RE = /^- id: ([A-Za-z0-9_-]+)\s*$/;
+// dsh ≥ 0.2.0 的 preset 文件是「一个 - insert: 行内嵌 config.plugins: 数组」：插件行以 10 空格
+// `- id:` 起始，其 name:/disabled:/config: 等键为 12 空格，cordis:group 的内层子行为 14 空格。
+// 补丁只认 10 空格的顶层插件行；14 空格的嵌套行（如 minimal 的 terminal-bash / persistent-bash）
+// 一律不动，避免误伤 minimal 的持久 shell 组。
+const HARMONY_TOP_ROW_RE = /^          - id: ([A-Za-z0-9_-]+)\s*$/;
+const HARMONY_TOP_ROW_INDENT = '          '; // 10 空格：顶层插件行 `- id:` 的缩进
+const HARMONY_KEY_INDENT = '            ';   // 12 空格：行内 name:/disabled: 等键的缩进
 const HARMONY_MARKER = '# HarmonyOS:';
+const HARMONY_NESTED_ROW_RE = /^              - id: ([A-Za-z0-9_-]+)\s*$/; // 14 空格：group config 内嵌套行
+const HARMONY_NESTED_KEY_RE = /^                \S/;                        // 16 空格：嵌套行的键
 
-/** preset 顶层（列 0）是否已有该 id 的行；group 内 4 空格缩进的嵌套行不算。 */
+/** 本 preset 的 config.plugins 数组顶层（10 空格 `- id:`）是否已有该 id 的行；
+ *  cordis:group 内 14 空格的嵌套行不算（minimal 的 terminal-bash / persistent-bash 即属此类）。 */
 function hasTopLevelPresetRow(lines, id) {
   for (const line of lines) {
     const m = HARMONY_TOP_ROW_RE.exec(line);
@@ -238,32 +204,69 @@ function hasTopLevelPresetRow(lines, id) {
   return false;
 }
 
+/** 按 HARMONY_ENSURED_PRESET_ROWS 追加缺失的顶层插件行；返回追加数。
+ *  行以 10 空格 `- id:` / 12 空格 `name:` 追加到文件末尾（即 config.plugins 数组末），
+ *  与数组内既有行的缩进一致；idempotency 由 hasTopLevelPresetRow（按 id）保证。 */
 function ensurePresetRows(out) {
   let ensured = 0;
   for (const spec of HARMONY_ENSURED_PRESET_ROWS) {
     if (spec.requireRow !== undefined && !hasTopLevelPresetRow(out, spec.requireRow)) continue;
     if (hasTopLevelPresetRow(out, spec.id)) continue;
-    while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
-    out.push('', `# ${spec.reason}`, `- id: ${spec.id}`, `  name: '${spec.name}'`, '');
+    out.push(`# ${spec.reason}`);
+    out.push(`${HARMONY_TOP_ROW_INDENT}- id: ${spec.id}`);
+    out.push(`${HARMONY_KEY_INDENT}name: '${spec.name}'`);
     ensured++;
   }
   return ensured;
 }
 
+/**
+ * 禁用 14 空格嵌套行（见 HARMONY_DISABLED_NESTED_PRESET_ROWS）。在顶层行补丁之后跑：
+ * 嵌套行被顶层循环原样透传，这里再扫描一次。返回 { lines, count }；幂等。
+ */
+function disableNestedPresetRows(lines) {
+  const out = [];
+  let count = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    out.push(line);
+    const m = HARMONY_NESTED_ROW_RE.exec(line);
+    const reason = m ? HARMONY_DISABLED_NESTED_PRESET_ROWS[m[1]] : undefined;
+    if (reason === undefined) continue;
+    let j = i + 1;
+    const block = [];
+    while (j < lines.length && HARMONY_NESTED_KEY_RE.test(lines[j])) { block.push(lines[j]); j++; }
+    const hasDisabled = block.some(b => /^                disabled:/.test(b));
+    let inserted = false;
+    for (const b of block) {
+      if (/^                disabled:/.test(b)) {
+        if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
+        out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+        count++;
+      } else {
+        out.push(b);
+        if (!hasDisabled && !inserted && /^                name:/.test(b)) {
+          out.push(`                disabled: true ${HARMONY_MARKER} ${reason}`);
+          inserted = true; count++;
+        }
+      }
+    }
+    i = j - 1;
+  }
+  return { lines: out, count };
+}
+
 function patchAgentPresetsRuntime() {
   const { readdirSync: rd, existsSync: ex, readFileSync: rf, writeFileSync: wf } = require('node:fs');
-  // dsh ≥ 0.1.2 ships presets inside the agent-presets package (SHIPPED_PRESET_ROOT =
-  // `<pkg>/presets/`); earlier builds kept them under config/agent-presets. Use whichever exists.
-  const presetsDir = [
-    join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
-    join(DSH_ROOT, 'config', 'agent-presets'),
-  ].find(ex);
-  if (presetsDir === undefined) return;
+  // dsh ≥ 0.2.0 ships presets inside the dsh-web-app package (`<pkg>/presets/<id>.patch.yml`,
+  // one `- insert:` row per file with a nested `config.plugins:` array); earlier builds kept them
+  // in the agent-presets package or config/agent-presets, which no longer exist.
+  const presetsDir = join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'presets');
+  if (!ex(presetsDir)) return;
   let total = 0;
   let ensuredTotal = 0;
-  for (const name of rd(presetsDir)) {
-    const file = join(presetsDir, name, 'agent.cordis.yml');
-    if (!ex(file)) continue;
+  for (const name of rd(presetsDir).filter((n) => n.endsWith('.patch.yml')).sort()) {
+    const file = join(presetsDir, name);
     const lines = rf(file, 'utf8').split('\n');
     const out = [];
     const totalBefore = total;
@@ -273,31 +276,36 @@ function patchAgentPresetsRuntime() {
       const m = HARMONY_TOP_ROW_RE.exec(line);
       const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
       if (reason === undefined) continue;
-      // 收集该顶层 row 的 2 空格缩进行（4 空格 config 嵌套内容不计入）。
+      // 收集该顶层插件行（10 空格 `- id:`）的后续 12 空格键行（14 空格的 group 内层行不计入，
+      // 以免越过 tool-fs-search 的 config: 子块或误伤 minimal 的嵌套持久 shell 组）。
       const block = [];
       let j = i + 1;
-      while (j < lines.length && /^  \S/.test(lines[j])) { block.push(lines[j]); j++; }
-      const hasDisabled = block.some(b => /^  disabled:/.test(b));
+      while (j < lines.length && /^            \S/.test(lines[j])) { block.push(lines[j]); j++; }
+      const hasDisabled = block.some(b => /^            disabled:/.test(b));
       let inserted = false;
       for (const b of block) {
-        if (/^  disabled:/.test(b)) {
+        if (/^            disabled:/.test(b)) {
           if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
-          out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          out.push(`${HARMONY_KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
           total++;
         } else {
           out.push(b);
-          if (!hasDisabled && !inserted && /^  name:/.test(b)) {
-            out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          if (!hasDisabled && !inserted && /^            name:/.test(b)) {
+            out.push(`${HARMONY_KEY_INDENT}disabled: true ${HARMONY_MARKER} ${reason}`);
             inserted = true; total++;
           }
         }
       }
       i = j - 1;
     }
-    const ensured = ensurePresetRows(out);
+    const nested = disableNestedPresetRows(out);
+    const nestedLines = nested.lines;
+    const nestedCount = nested.count;
+    const ensured = ensurePresetRows(nestedLines);
     ensuredTotal += ensured;
+    total += nestedCount;
     if (total > totalBefore || ensured > 0) {
-      wf(file, out.join('\n'));
+      wf(file, nestedLines.join('\n'));
       console.log(`[dsh-harmony] preset ${name} 已适配：禁用 ${total - totalBefore} 行、补齐 ${ensured} 行`);
     }
   }
@@ -306,15 +314,24 @@ function patchAgentPresetsRuntime() {
   }
 }
 
-/** 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。 */
+/**
+ * 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。
+ *
+ * 不依赖易漂移的构建产物命名 / 文件长度：上游构建曾把薄入口命名为
+ * `profile-boot-<hash>.js`（<300B），新版改为 `profile-boot.js`（310B），实现块为
+ * `profile-boot-<hash>.js`（12KB）。这里用**结构特征**识别：薄入口重导出 runProfile
+ * 但自身不定义该函数；实现块内含 `async function runProfile(...)`，据此排除。
+ */
 function findProfileBootEntry() {
   try {
     const candidates = [];
     for (const file of readdirSync(DSH_CLI_LIB())) {
-      if (!file.startsWith('profile-boot-') || !file.endsWith('.js')) continue;
+      if (!file.startsWith('profile-boot') || !file.endsWith('.js')) continue;
       const fullPath = join(DSH_CLI_LIB(), file);
       const content = readFileSync(fullPath, 'utf8');
-      if (content.includes('export { runProfile') && content.length < 300) {
+      const reExportsRunProfile = /\brunProfile\b/.test(content) && /\bexport\b/.test(content);
+      const definesRunProfile = /function\s+runProfile\s*\(/.test(content) || /\brunProfile\s*=/.test(content);
+      if (reExportsRunProfile && !definesRunProfile) {
         candidates.push({ path: fullPath, mtime: statSync(fullPath).mtimeMs });
       }
     }
