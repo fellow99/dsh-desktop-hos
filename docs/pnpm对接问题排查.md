@@ -5,6 +5,8 @@
 > 排查日期：2026-09-29
 > 结论一句话：**在 DSH 签名包内无法使用 pnpm。** 直接原因是本应用域禁止子进程分配 JIT 可执行内存，任何 node 脚本（npm / corepack / pnpm）一启动就被内核以 `SIGSYS` 杀死；pnpm 装在哪、PATH 怎么配都改变不了这一点。
 
+> **补充结论（2026-10-01 深入分析后）**：上面这句只对「**spawn 子进程**」这条路成立。把 pnpm **纯 JS 版本打入包中、并让 Electron 主进程在进程内调用它**（不 spawn 任何子进程）是**可行**的 —— 本工程 `specs/011-runtime-provisioning/` 的「路径 B」正是这条路线，探测/选路/校验代码（`src-main/market-runtime.js`）已实现并单测通过，只差「进程内调用补丁」未投入。详见本文 §11。
+
 ---
 
 ## 1. 背景与目标
@@ -342,3 +344,128 @@ pnpm add <插件包名>            # 可加 --registry https://registry.npmmirro
 - [pnpm CLI Distribution（DeepWiki）](https://deepwiki.com/pnpm/pnpm/3.7-cli-distribution)
 - [dsh-ohos-patch（OHOS 移植补丁与实测文档）](https://github.com/shenjackyuanjie/dsh-ohos-patch)
 - pnpm 包元数据：`https://registry.npmjs.org/pnpm/latest`、包内 `install.js` / `native-binary.mjs`
+
+---
+
+## 11. 深入分析：把 pnpm 纯 JS 打入包 + 让 dsh-market 进程内安装插件（2026-10-01）
+
+> 本节回答三个问题：① 能否把 pnpm 纯 JS 版本打入包中；② 能否让 dsh-market 调用 pnpm 并顺利装插件；③ 若可行，插件落盘位置 / 清除 / 配置如何设计。
+>
+> 结论先行：**① 能；② 能，但必须走「进程内调用」而非 spawn（spawn 在鸿蒙平台级不可能）；③ 有明确落点，关键是用 `node-linker=hoisted` 规避 symlink/hardlink 禁令。**
+>
+> 本工程**已有一份完整设计**（`specs/011-runtime-provisioning/`，模块 011）：其中「路径 B（进程内 pnpm JS）」就是本节答案，其探测/选路/完整性校验代码（`src-main/market-runtime.js` 的 `discoverMarketRuntime()`）**已实现并通过 24 项单测**，唯独「进程内调用 pnpm」这一环被标为「暂缓 / 本版未投入」（`plan.md` §11）。因此这不是「能不能」的问题，而是「要投入多少、有哪些硬约束」的问题。本节把这些硬约束与落点一次性讲清，作为将来落地「路径 B」的决策依据。
+
+### 11.1 问题一：pnpm 纯 JS 能否打入包中 —— 能
+
+**版本选型（原 §3 已实测，此处补充「程序化 API」这一维）：**
+
+| 版本 | 形态 | 能否进程内 import |
+|---|---|---|
+| `pnpm@12.x` | Rust 原生分发壳（`@pnpm/exe.*` 平台二进制） | ❌ 无 openharmony 产物 |
+| `pnpm@11.x` | 纯 ESM（`bin/pnpm.mjs`，`type: module`，无 install 脚本、无平台 optionalDependencies），`engines: node >=22.13` | ✅ |
+| `pnpm@10.x` | 纯 CJS（`bin/pnpm.cjs`），`engines: node >=18.12` | ✅ |
+
+**关键更正（原排查文档未覆盖的版本陷阱）**：进程内调用 pnpm 用的「程序化 API 包」**不是 `@pnpm/core`**。实测 npm registry：`@pnpm/core` 在 pnpm **v11 起停止发布**（最后一个版本 `1016.1.12` 属 pnpm 10.16 线，2025-12 ~ 2026-03）。pnpm v11 把安装引擎拆分为 **`@pnpm/installing.deps-installer`**（npm 上已发布 `1102.x`/`1103.x` 线），内含进程内安装所需的：
+
+- `install(manifest, opts)`
+- `mutateModules(projects, opts)`
+- `addDependenciesToPackage(manifest, selectors, opts)`
+- `removeDependenciesFromPackage(manifest, selectors, opts)`
+
+（函数名来自其 `lib/install/index.d.ts`；GitHub 源码路径 `installing/deps-installer/src/install/index.ts`。⚠️ 落地前须按最终选定的 pnpm@11.x 精确版本再次核对该包名与签名 —— 本项为 registry 检索结论，非设备实测，标 `未验证`。）
+
+**本工程已有铺垫**：`src-main/market-runtime.js:53-57` 已预留物化位置常量：
+
+```js
+const BUNDLED_PNPM_PACKAGE = 'dsh-market-pnpm';
+const BUNDLED_PNPM_ENTRY_REL = ['node_modules', BUNDLED_PNPM_PACKAGE, 'lib', 'index.mjs'];
+```
+
+即约定「把 pnpm 的 JS（含传递依赖）物化进 `dsh-dist/node_modules/dsh-market-pnpm/lib/index.mjs`」。`discoverMarketRuntime()` 的路径 B 探测（`:454-468`）只做「该入口是否随包就位」的存在性检查 —— 物化动作本身（`collect-dsh.mjs` 新增 `collectMarketPNPM()`，`plan.md` §4.2 / T2.6）**尚未写**。
+
+**物化方式与一个待核实的风险**：pnpm v11 的 store 是「SQLite 后端的索引（store v11）」——需确认 `@pnpm/installing.deps-installer` 的依赖闭包里是否引入 `better-sqlite3` 等**原生模块**。若有，则需像本工程 `injectBetterSqlite3()` 那样注入 aarch64 成品（原生 `.node` 在主进程内 dlopen 是可行的，与「spawn 子进程 SIGSYS」不是一回事）；若走 WASM/纯 JS 则无需。此项 `未验证`，是物化阶段的第一优先级排查项。
+
+### 11.2 问题二：dsh-market 能否进程内调用 pnpm —— 能，但 spawn 是死路
+
+**先厘清真实的调用链（纠正原 §5.1 的 `spawnSync` 描述）**：当前 pin 的 `dsh-v0.2.0-rc.2` 里，`dsh plugin` 内部**不是裸 `spawnSync("pnpm")`，而是 `execa`**：
+
+```
+市场 UI → POST /dsh-market/install（同源，进程内）
+  → dshmarket 的 runDshPlugin()           spawn "dsh plugin --profile desktop add|remove <target>"
+      → dsh CLI runPluginCommand()
+          → runProfilePnpm()               execa(options.command ?? 'pnpm', [...], { cwd: <profile dir> })   ← 真正的 pnpm 子进程
+```
+
+源码落点：`deepseek-harness/packages/boot/plugin-manager/src/operations.ts:357`（主安装）、`:177/:507/:597/:626`（`pnpm view` / 修复 / `config get registry`）。`probePnpm()` / `provisionPnpm()` 在 `dsh-market/src/dsh-cli.ts` 内另行 spawn `pnpm --version` / `corepack` / `npm`。**两层 spawn，任何一层 spawn 出的 node/pnpm 子进程在鸿蒙应用域都被 seccomp SIGSYS 杀掉**（原 §6 已实测），所以「把 pnpm 装到 PATH 上」这条路线彻底走不通，与 pnpm 装在哪无关。
+
+**dsh-market 已内置三条可改造的接缝（源码级实测）：**
+
+| 接缝 | 位置（`dsh-market/src/`） | 是否进程内 | 能否用于鸿蒙 |
+|---|---|---|---|
+| `setHostPackageManager({command,args,env})` | `dsh-cli.ts:781`，经 `profileContext.packageManager` 注入（`index.ts:109-124,255`） | ❌ 仍是 spawn 一个 command | 不够：只是换了可执行文件路径 |
+| **`DesktopPnpmLike.runPlugin(args, invokingDir, signal)`** | `dsh-cli.ts:577-608`，经 `desktopProfiles` 服务特性检测（`index.ts:284-320`） | ✅ **真进程内**：宿主实现，返回句柄（stdout/stderr 流 + done + cancel） | **← 鸿蒙 wrapper 要实现的接缝** |
+| 官方 Electron 路线（`config.profile='desktop'` → `pluginManager` 服务 → `installBundle`） | `official-desktop.ts:36-37`（注释明言「Never fall back to `dsh plugin --profile desktop`」） | ⚠️ 半进程内：`pluginManager` 内部**仍 spawn pnpm**（`operations.ts:357`） | 不够：spawn 仍在 |
+
+**注意**：本工程 harmony profile 的 `cordis.patch.yml:70-74` 已对 dshmarket 注入 `config: { profile: desktop }`。因此若捆绑当前版本的 dshmarket，市场会走**第三条（官方 Electron）路线** → 命中 `pluginManager` → 其内部 `execa` spawn pnpm → 依旧 SIGSYS。**spawn 问题只是「搬了位置」，没有消失。** 要根治，必须让市场走**第二条（`desktopPnpm`）**：wrapper 在 Electron 主进程内实现 `runPlugin`，内部用 `@pnpm/installing.deps-installer` 的 `addDependenciesToPackage`/`removeDependenciesFromPackage`（或 `install`/`mutateModules`）**进程内**装/卸包，把结果映射回市场期望的 `InstallResult` 形状。这正是 `specs/011-runtime-provisioning/plan.md` §11.2 列出的补丁清单（`dshArgv()`/`spawnShim()`/`runDshPlugin()`/`probePnpm()`/`provisionPnpm()` 改为进程内分支）。
+
+**进程内运行 pnpm 的硬约束（必须一并解决，否则跑不通）：**
+
+1. **`ignore-scripts: true`（强制）** —— 禁用 lifecycle 脚本：① 否则 pnpm 会 spawn node 子进程跑脚本 → SIGSYS；② 否则等于在 Electron 主进程内执行插件作者的任意代码（社区 `dsh-ohos-patch` 已要求 `--ignore-scripts`）。代价：依赖 install/postinstall 的插件装不了（须在 UI/文档披露）。
+2. **`process.exit` 拦截** —— pnpm JS 内部可能调 `process.exit`，进程内运行会**杀掉 Electron 主进程**。调用期间须把 `process.exit` 包装成抛异常。
+3. **`process.argv` 保存/恢复** —— pnpm 期望独占 `process.argv`。
+4. **symlink/hardlink 禁令（原 spec 与排查文档都没讲透的关键补充）** —— pnpm 默认 `node-linker=isolated` 会在 `node_modules/` 里建 symlink、在 `.pnpm` store 里建 hardlink；鸿蒙沙箱**两者都禁**（原 §2 的 B1/B2）。解法（pnpm 官方设置，已核实）：
+   - `nodeLinker: hoisted` —— 生成**扁平 node_modules，无 symlink、无 `.pnpm` 虚拟 store**；
+   - `packageImportMethod: copy` —— 从 store 拷贝文件而非 hardlink。
+   **这恰好与本工程既有产物形态一致**：`collect-dsh.mjs` 物化出的 `dsh-dist` 就是「扁平、无 junction、无 .pnpm」的布局；而且 dsh 的 `initProfile` 写的 `pnpm-workspace.yaml` 本来就是 `nodeLinker: hoisted`（`deepseek-harness/packages/boot/app-boot/src/profile.ts:230-235`）——即 dsh 自己就不依赖 symlink 布局。
+5. **配置位置** —— pnpm v11 起，**除 auth/registry 外的一切设置从 `.npmrc` 迁到 `pnpm-workspace.yaml`（camelCase）**（v11.0.0 起，见 release notes）。所以 `nodeLinker`/`packageImportMethod`/`storeDir`/`ignoreScripts` 都要写进 profile 的 `pnpm-workspace.yaml`，而不是 `.npmrc`。
+6. **`git:` 源插件装不了** —— 设备无 `git`（原 §7.3 已确认），只能装 npm registry 包。
+
+**好消息（大幅降低工作量）**：dsh 的「插件装载/发现」**完全不依赖 pnpm** —— 它只要求 `node_modules/<name>/package.json` 能被 `createRequire(...).resolve.paths()` 按 node_modules 向上走查到（`packages/boot/app-boot/src/profile.ts` 的 `packageDirFromAnchor`/`resolveBundleDir`），**扁平拷贝即可，symlink 非必需**（本工程 `ensureDshPluginsProfileLink()` 的「复制而非 symlink」已验证此点）。且 `dsh.profile.bundles` 的增删**全程可进程内调用**：`writeProfileBundles`/`reconcileProfilePlugins`（`app-boot/src/profile-plugins.ts`）、`selectBundle`（`plugin-manager/src/index.ts:715-735`）都是导出函数。**因此「装文件」这半程是唯一需要进程内 pnpm 的地方；「改 bundles + 热重载」这半程 wrapper 已经能进程内做。**
+
+### 11.3 问题三：插件落盘 / 清除 / 配置
+
+**落盘位置：**
+
+| 对象 | 路径 | 说明 |
+|---|---|---|
+| 插件本体 | `$DSH_HOME/profiles/desktop/node_modules/<包名>/` | 扁平（hoisted）、无 `.pnpm`；由进程内 pnpm 写入 |
+| pnpm store | `<userData>/.pnpm-store`（须显式 `storeDir` 指定） | **不能**用默认 `~/.pnpm-store`——`~` 须经 `ensureSandboxHome()` 指到 userData 才可写，默认路径会解析到沙箱外 |
+| 锁文件 | `$DSH_HOME/profiles/desktop/pnpm-lock.yaml` | 锁版本 |
+| 包管理器状态 | `$DSH_HOME/profiles/desktop/pnpm-workspace.yaml` | `nodeLinker`/`packageImportMethod`/`storeDir`/`ignoreScripts`/`allowBuilds`/registry mirror |
+
+**清除：**
+
+- 单个插件：`dsh plugin remove <pkg>` → 进程内 `removeDependenciesFromPackage` → reconcile 从 `dsh.profile.bundles` 剔除。市场侧已有 `removeAndReconcile`（`dsh-market/src/install.ts`）+ 宿主桥接链接清理 `removeDanglingHostBridge`（`install.ts:583`）。
+- 残留 store 清理：`pnpm store prune`（进程内对应 store 管理 API；或直接删 `<userData>/.pnpm-store` 后全量重装）。
+- 失败回滚：dsh 的 `runProfilePnpm` 已实现「快照 `package.json`+`pnpm-lock.yaml` → 失败还原 → 修复重装」（`operations.ts:303-321,504-517`）——**这部分逻辑与 spawn 无关，进程内改造时可直接沿用其语义**（用文件读写作快照，不需要 pnpm 子进程）。
+
+**配置：**
+
+| 文件 | 内容 | 维护者 |
+|---|---|---|
+| `package.json` | `dependencies` + `dsh.profile.bundles`（**有序 = 加载序**） | 进程内 `writeProfileBundles`/`reconcileProfilePlugins` |
+| `cordis.patch.yml` | 插件 disable/enable 覆写（`- id: … disabled: true`） | 市场 hot toggle 已写此文件 |
+| `compatibility.json` | 版本豁免（`setProfileVersionExemption`） | dsh |
+| `pnpm-workspace.yaml` | `nodeLinker: hoisted`、`packageImportMethod: copy`、`storeDir`、`ignoreScripts: true`、`allowBuilds`、`registry: https://registry.npmmirror.com/`（国内镜像） | 进程内 pnpm |
+
+### 11.4 与既有工程的关系 + 落地工作量清单
+
+「路径 B」已完成的（`specs/011-runtime-provisioning` + `src-main/market-runtime.js`）：A/B/C 有序选路、ELF/JS 完整性校验、`dsh` shim 生成、PATH/PNPM_HOME 组装、失败可见性诊断 —— 均已实现并单测通过（`IMPLEMENTATION_NOTES.md` §5.2：24/24 通过）。
+
+「路径 B」尚缺的（对应 `plan.md` §11 / T2.6 / T4.2 / T4.3）：
+
+| 待办 | 位置 | 性质 |
+|---|---|---|
+| ① 物化 pnpm JS 到 `dsh-dist/node_modules/dsh-market-pnpm/` | `scripts/collect-dsh.mjs` 新增 `collectMarketPNPM()` | 构建期 |
+| ② dsh-market 补丁：`runDshPlugin`/`probePnpm`/`provisionPnpm` 改为进程内分支 | `patches/dsh-market-v<ver>/dsh-market-in-process-pnpm.patch` + `build-dsh.mjs` 应用 | 补丁 |
+| ③ wrapper 实现 `desktopProfiles` + `desktopPnpm.runPlugin`（进程内调 `@pnpm/installing.deps-installer`） | `src-main/`（新模块，可单测） | 运行期 |
+| ④ 进程内 pnpm 配置 + `process.exit` 防护 + `argv` 保存/恢复 | 随 ③ | 运行期 |
+| ⑤ 规避 dsh `pluginManager` 的 spawn：确保市场走 ② 的 `desktopPnpm` 分支而非官方 Electron 分支 | 随 ②/③ | 运行期 |
+
+**风险与已知边界**（`plan.md` §15 R5/R6/R10 已列，此处汇总）：dsh-market 升级使补丁失配（按版本化 `patches/dsh-market-v<ver>/` 管理）；pnpm 调 `process.exit` 杀主进程（包装拦截）；`git:` 源插件与依赖 install 脚本的插件不可装（UI 披露）；`dsh-dist` 就地升级不重解压（沿用既有缺口，需全新安装生效）。
+
+### 11.5 结论
+
+- **唯一「证书-free 且自包含」、可支撑 AppGallery 上架承诺的路线就是「路径 B（进程内 pnpm JS）」**：路径 A（随包签名 Node ELF）需 AGC 二进制证书（个人开发者不可得，已撤回）；路径 C（复用设备 Node）是机会性兜底、不作承诺（且现设备 `node -e` 无输出、路径 C 大概率不通过）。
+- 它与原 §6.4 的「应用域子进程 SIGSYS」结论**不冲突**：SIGSYS 只杀 **fork 出的子进程**，而 Electron 主进程自身就是 Node 22.17、能跑 JS —— 进程内跑 pnpm JS 完全绕开 seccomp 限制。
+- 落地代价集中在「改 dsh-market 的 spawn 点 + 实现进程内 `runPlugin` + 让 pnpm 用 `node-linker=hoisted` 出扁平 node_modules」，且本工程探测/选路/校验/诊断的架子已搭好 —— 属于「已有设计、待补最后一环」，而非「另起炉灶」。
