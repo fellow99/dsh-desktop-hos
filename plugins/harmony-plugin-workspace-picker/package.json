@@ -1,0 +1,30 @@
+{
+  "name": "harmony-plugin-workspace-picker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH harmony wrapper plugin: replaces the workspace directory flow with a four-root (sandbox/desktop/documents/download) Miller-column picker, with a plugin-hosted native-capability IPC bridge for root resolution and permissions",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  }
+}

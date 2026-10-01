@@ -72,3 +72,24 @@
   config:
     profile: desktop
     allowRestart: false
+
+# 鸿蒙桌面版（需求 203）：用专用插件 harmony-plugin-workspace-picker 替换内置
+# 「选择工作区目录」对话框。
+# directory-picker auto 行在 Electron 下会挂载「browse host + 内置 browse client」
+# （dsh-disable-native-picker.patch 已强制 resolve→browse）。现需用插件自有 client 面
+# 替换内置 browse client，故分三步：
+#   1) 禁用 auto 行（连带其在运行期 Loader 树挂载的内置 browse client）；
+#   2) 直接 insert browse host 后端（仅 host 面，注册 ctx.directoryPicker，提供
+#      directoryPicker/list 与 directoryPicker/createDirectory 两个 Typert RPC）；
+#   3) insert 插件 harmony-plugin-workspace-picker：host 面注册四个原生能力 IPC 桥
+#      （根路径 / 权限检查 / 权限申请 / 打开应用信息），client 面填充
+#      conversation.hero 与 sidebar.workspaces 两个 directory-flow slot。
+# browse host 无 dsh.client 字段，不会拉入与插件竞争的 client flow。
+- id: directory-picker
+  disabled: true
+
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: workspace-picker
+      name: harmony-plugin-workspace-picker
