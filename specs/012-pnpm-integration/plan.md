@@ -116,13 +116,14 @@ interface DesktopPnpmHandleLike {
 ### 6.2 关键算法
 
 - **物化**（FR-012-001~004）：`collectMarketPNPM()` 从构建期获取的引擎包（构建期用宿主 pnpm/npm 安装到临时目录）复制入口与依赖闭包到 `dsh-dist/node_modules/dsh-market-pnpm/`；幂等；版本断言；`isParsableJs` 校验。
-- **进程内调用**（FR-012-010~015）：`runPnpmInProcess()`：
-  1. 保存 `process.argv`；
-  2. 包装 `process.exit`（设为抛 `PnpmExitError`）；
-  3. 动态 `import(entry)`（惰性、缓存）；
-  4. 调 `addDependenciesToPackage` / `removeDependenciesFromPackage`（签名 spike 后定）；
-  5. `finally` 恢复 argv 与原 `process.exit`；
-  6. 返回 `{exitCode, stdout, stderr}`。
+- **进程内调用**（FR-012-010~015，worker 方案）：`runPnpmInProcess(args, { dir, signal })`（父侧，`lib/pnpm-inprocess.js`）：
+  1. 解析并校验引擎入口（`DSH_PNPM_ENGINE`，`assertPnpmEngine`）；缺失即返回 exit 127；
+  2. `new Worker(lib/pnpm-worker.mjs, { workerData: { entry, args: [...args, '--dir', dir] } })`；
+  3. worker 内设置 `process.argv`、改写 stdout/stderr 为 `postMessage`，再 `import(entry)`；
+  4. pnpm 的 pending 工作耗尽 → worker 事件循环排空 → worker 退出，退出码即 pnpm 退出码；
+  5. 父侧把 worker 消息写入句柄的 `stdout`/`stderr` PassThrough，`worker.on('exit', code)` 时 `done` 解析 `{ exitCode, signal: null }`；
+  6. `cancel()` / `signal` 触发 `worker.terminate()`。
+  - **不追加 reporter**：市场对 `add/remove` 会自行追加 `--reporter=ndjson`（`dsh-cli.ts:1145`）；runner 只追加 `--dir`。（曾误加 `--reporter=append-only`，会因 last-wins 覆盖市场的 ndjson，已修复。）
 - **配置注入**（FR-012-006~009）：`ensureProfilePnpmConfig()` 读取/创建 `pnpm-workspace.yaml`，仅补齐缺失键，保留用户已有键。
 - **契约注册**（FR-012-016~019）：在主进程启动流程中，market bundle mount 之前，向 cordis 根 ctx 提供 `desktopProfiles` 服务对象（含 `current.dir`），并暴露 `desktopPnpm` 实现 `DesktopPnpmLike`。**具体 cordis 服务注册/嵌套注入写法须对照市场 `index.ts` 在多化后实现阶段验证。**
 
@@ -147,12 +148,15 @@ interface DesktopPnpmHandleLike {
 
 | 文件 | 用途 | 类型 |
 |---|---|---|
-| `scripts/collect-dsh.mjs` | 新增 `collectMarketPNPM()`、`assertDshMarketVersion()` | 改（构建期） |
-| `src-main/pnpm-inprocess.js` | 进程内 pnpm 调用（纯模块，可单测） | 新增（运行期） |
-| `src-main/pnpm-runtime.js` | profile pnpm 配置注入 + 契约注册辅助 | 新增（运行期） |
-| `src-main/main.js` | 接线：`setupMarketRuntime()` 后、`runProfile` 前注册 `desktopProfiles` | 改（运行期） |
-| `profiles/desktop/pnpm-workspace.yaml` | profile pnpm 配置模板（若采用种子方式） | 新增（配置） |
-| `scripts/tests/pnpm-inprocess.test.mjs` | 单测 | 新增 |
+| `scripts/collect-dsh.mjs` | 新增 `collectMarketPNPM()`（物化 pnpm 引擎）、`assertDshMarketVersion()`（市场版本断言） | 改（构建期） |
+| `plugins/harmony-plugin-market-runtime/lib/index.js` | 提供 `desktopProfiles` / `desktopPnpm`（host-plane bundle） | 新增（运行期） |
+| `plugins/harmony-plugin-market-runtime/lib/pnpm-inprocess.js` | 父侧 runner：worker 生命周期 → `{stdout,stderr,done,cancel}` | 新增（运行期） |
+| `plugins/harmony-plugin-market-runtime/lib/pnpm-worker.mjs` | worker 入口：import pnpm CLI（合成 argv） | 新增（运行期） |
+| `plugins/harmony-plugin-market-runtime/cordis.patch.yml` | 该 bundle 的 patch（insert 自身行） | 新增 |
+| `src-main/main.js` | 设 `DSH_PNPM_ENGINE`；`ensureProfilePnpmConfig()`（幂等创建 `pnpm-workspace.yaml`） | 改（运行期） |
+| `src-main/market-runtime.js` | 路径 B 探测常量更新为 `pnpm/dist/pnpm.mjs` | 改（运行期） |
+| `profiles/desktop/pnpm-workspace.yaml` | profile pnpm 配置种子 | 新增（配置） |
+| `plugins/harmony-plugin-market-runtime/tests/pnpm-inprocess.test.mjs` | 单测（假引擎，无网络） | 新增 |
 | `specs/201-dsh-market/{spec,plan}.md` | 同步描述契约消费 | 改（文档） |
 
 ## 9. 与规格的交叉引用

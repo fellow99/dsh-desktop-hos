@@ -12,7 +12,7 @@
  * （如 cordis-plugin-group、大量 packages 下插件）；② 非 hoisted 的外部依赖（如 zod）。
  */
 import { execSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wrapSharpStubCjs, wrapSharpStubEsm } from './lib/sharp-stub.mjs';
@@ -771,6 +771,32 @@ function prunePnpmEngine(root) {
 }
 
 /**
+ * 断言已物化的 pnpm 引擎产物：版本与 `PNPM_VERSION` 一致（FR-012-002），入口非空（FR-012-004）。
+ * 两条路径（新物化 / 已存在快路径）都调用，避免快路径绕过断言。
+ */
+function assertPnpmEngineArtifact(dest) {
+  const pkgPath = resolve(dest, 'package.json');
+  let version;
+  try {
+    version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+  } catch (err) {
+    console.error(`[collect-dsh] pnpm 引擎 package.json 无法解析: ${err.message}`);
+    process.exit(1);
+  }
+  if (version !== PNPM_VERSION) {
+    console.error(`[collect-dsh] pnpm 引擎版本不符: 期望 ${PNPM_VERSION}，实际 ${version}`);
+    process.exit(1);
+  }
+  const entry = resolve(dest, 'dist', 'pnpm.mjs');
+  let size = 0;
+  try { size = statSync(entry).size; } catch { /* missing */ }
+  if (!(size > 0)) {
+    console.error(`[collect-dsh] pnpm 引擎入口缺失或为空: ${entry}`);
+    process.exit(1);
+  }
+}
+
+/**
  * 物化纯 JS pnpm 引擎（`pnpm` 包）到 `dsh-dist/node_modules/pnpm`（spec 012 FR-012-001~004）。
  *
  * 引擎选型见 docs/012-pnpm+dsh-market.md：采用自带打包 CLI 的 `pnpm` 包（进程内由
@@ -780,6 +806,7 @@ function prunePnpmEngine(root) {
 function collectMarketPNPM() {
   const dest = resolve(distDir, 'node_modules/pnpm');
   if (existsSync(resolve(dest, 'package.json'))) {
+    assertPnpmEngineArtifact(dest);
     console.log('[collect-dsh] pnpm 引擎已物化');
     return;
   }
@@ -795,17 +822,9 @@ function collectMarketPNPM() {
       console.error(`[collect-dsh] pnpm 引擎物化失败（未落地）: ${src}`);
       process.exit(1);
     }
-    const got = JSON.parse(readFileSync(resolve(src, 'package.json'), 'utf8')).version;
-    if (got !== PNPM_VERSION) {
-      console.error(`[collect-dsh] pnpm 引擎版本不符: 期望 ${PNPM_VERSION}，实际 ${got}`);
-      process.exit(1);
-    }
     cpSync(src, dest, { recursive: true, dereference: true });
     prunePnpmEngine(dest);
-    if (!existsSync(resolve(dest, 'dist/pnpm.mjs'))) {
-      console.error(`[collect-dsh] pnpm 引擎入口缺失: ${resolve(dest, 'dist/pnpm.mjs')}`);
-      process.exit(1);
-    }
+    assertPnpmEngineArtifact(dest);
     console.log(`[collect-dsh] pnpm 引擎已物化 (pnpm@${PNPM_VERSION})`);
   } finally {
     rmSync(staging, { recursive: true, force: true });

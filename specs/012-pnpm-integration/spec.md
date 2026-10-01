@@ -64,7 +64,7 @@
 
 ### 3.1 构建期物化与版本固定
 
-- **FR-012-001**：收集阶段 MUST 把纯 JS pnpm 安装引擎（`@pnpm/installing.deps-installer` 及其传递依赖闭包）物化到 `dsh-dist/node_modules/dsh-market-pnpm/`，入口为 `lib/index.mjs`（对齐 `src-main/market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL`）。`[源码]`
+- **FR-012-001**：收集阶段 MUST 把纯 JS pnpm 引擎（**`pnpm` 包本身**，含其 `dist/pnpm.mjs` 打包 CLI）物化到 `dsh-dist/node_modules/pnpm/`，入口为 `dist/pnpm.mjs`（对齐 `src-main/market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL`）。`[源码]`（引擎选型见 spike：`@pnpm/installing.deps-installer` 因 `@yarnpkg` 的 `patch:` 依赖独立安装不可行。）
 - **FR-012-002**：系统 MUST 以**集中常量**固定 pnpm 版本，并在构建期（收集阶段）断言物化产物的版本与常量一致；不一致即 `process.exit(1)`。`[设计]`
 - **FR-012-003**：物化 MUST 幂等（目标入口已存在则跳过）；pnpm 引擎来源缺失时 MUST 硬失败，不得产出残缺部署包。`[设计]`
 - **FR-012-004**：物化后 MUST 校验入口文件存在且非空（复用 011 的 `isParsableJs`），损坏产物不得被记录为就绪。`[源码]`
@@ -80,8 +80,8 @@
 ### 3.3 进程内 pnpm 调用
 
 - **FR-012-010**：系统 MUST 在 **Electron 主进程内进程内调用** pnpm 安装引擎完成插件 `add` / `remove`，MUST NOT spawn 任何 node/pnpm 子进程。`[设计]`
-- **FR-012-011**：进程内调用期间 MUST 拦截 `process.exit`（包装为可捕获的异常），避免 pnpm 引擎退出整个 Electron 主进程。`[设计]`
-- **FR-012-012**：进程内调用前后 MUST 保存并恢复 `process.argv`（pnpm 期望独占 argv）。`[设计]`
+- **FR-012-011**：进程内调用 MUST 在 **`worker_threads` worker** 中运行 pnpm CLI，使 pnpm 的 `process.exit` 只退出 worker、不终止 Electron 主进程（无需包装 `process.exit`）。`[设计]`
+- **FR-012-012**：worker MUST 自行设置 `process.argv`（隔离），主进程 argv MUST NOT 被改动。`[设计]`
 - **FR-012-013**：进程内安装 MUST 强制禁用 lifecycle 脚本（`ignoreScripts: true`），既是平台约束（否则 spawn 子进程 SIGSYS），也是安全属性（不执行插件作者任意代码）。`[设计]`
 - **FR-012-014**：进程内安装 MUST 产出**扁平 node_modules**（hoisted），文件中不出现 symlink/hardlink（鸿蒙 B1 禁止）。`[源码]`
 - **FR-012-015**：进程内调用 MUST 接受来自市场的目标 spec（含 `name@version`）并写入 profile 目录，且与 dsh 的 profile 目录约定（`$DSH_HOME/profiles/desktop`）一致。`[源码]`
@@ -98,7 +98,7 @@
 
 - **FR-012-021**：所有关键事件与失败 MUST 以 `[dsh-harmony]` 前缀打印（与工程日志规范一致）；**禁止静默降级**。`[源码]`
 - **FR-012-022**：系统 MUST 向市场返回可读的失败信息（exitCode + stderr 文本），使市场 UI 的 `InstallResult` 分类逻辑可正常工作。`[源码]`
-- **FR-012-023**：系统 SHOULD 提供可经 `--inspect`（CDP `Runtime.evaluate`）读回的诊断探针，暴露：pnpm 引擎入口路径/版本、profile `pnpm-workspace.yaml` 关键设置、上次安装结果。`[设计]`
+- **FR-012-023**：系统 SHOULD 提供可经 `--inspect`（CDP `Runtime.evaluate`）读回的诊断探针（`globalThis.__marketRuntimePnpm`），暴露：profile 名/目录、pnpm 引擎入口路径与可用性。上次安装结果字段为 SHOULD（当前未实现）。`[源码]`
 
 ### 3.6 幂等、安全与回归安全
 
@@ -112,7 +112,7 @@
 
 | 实体 | 描述 | 关键属性 |
 |------|------|----------|
-| pnpm 引擎产物（`dsh-market-pnpm`） | 随包物化的纯 JS pnpm 安装引擎 | 入口 `dsh-dist/node_modules/dsh-market-pnpm/lib/index.mjs`；版本常量；依赖闭包 |
+| pnpm 引擎产物（`pnpm` 包） | 随包物化的纯 JS pnpm CLI | 入口 `dsh-dist/node_modules/pnpm/dist/pnpm.mjs`；版本常量 `11.28.3`；worker 线程内 import |
 | profile pnpm 配置 | desktop profile 的 `pnpm-workspace.yaml` | `nodeLinker: hoisted`、`packageImportMethod: copy`、`ignoreScripts: true`、`storeDir`、`minimumReleaseAge: 0` |
 | desktopPnpm 服务 | 暴露给市场的进程内包管理器 | `runPlugin(args, invokingDir, signal): DesktopPnpmHandleLike` |
 | DesktopPnpmHandleLike | 一次安装操作的句柄 | `stdout`、`stderr`、`done: Promise<{exitCode,signal}>`、`cancel()` |

@@ -16,9 +16,6 @@ import { Worker } from 'node:worker_threads'
 /** Worker entry, resolved relative to this module so it ships beside it. */
 const WORKER_URL = new URL('./pnpm-worker.mjs', import.meta.url)
 
-/** Largest stdout/stderr tail retained per stream, mirroring the market's caps. */
-const OUTPUT_LIMIT = 256 * 1024
-
 /**
  * The materialized pnpm engine entry, from `DSH_PNPM_ENGINE` (set by the
  * Electron main process before `runProfile`).
@@ -65,10 +62,12 @@ export function runPnpmInProcess(args, options = {}) {
   const dir = options.dir
   let settled = false
   let resolveDone
+  let onAbort
   const done = new Promise((resolve) => { resolveDone = resolve })
   const finish = (result) => {
     if (settled) return
     settled = true
+    if (options.signal && onAbort) options.signal.removeEventListener('abort', onAbort)
     stdout.end()
     stderr.end()
     resolveDone(result)
@@ -93,7 +92,7 @@ export function runPnpmInProcess(args, options = {}) {
     return failNow(127, '[harmony-pnpm] no profile directory; refusing to run pnpm\n')
   }
 
-  const cliArgs = [...args, '--dir', dir, '--reporter=append-only']
+  const cliArgs = [...args, '--dir', dir]
   let worker
   try {
     worker = new Worker(WORKER_URL, { workerData: { entry, args: cliArgs } })
@@ -103,8 +102,8 @@ export function runPnpmInProcess(args, options = {}) {
 
   const feed = (target, text) => {
     options.onOutput?.(text, target === stdout ? 'stdout' : 'stderr')
-    // The stream itself bounds retention; a slow consumer is not backpressured
-    // here because the market reads these streams eagerly.
+    // The market drains these streams eagerly and caps its own retained tail;
+    // no additional bound is applied here.
     if (target === stdout) stdout.write(text)
     else stderr.write(text)
   }
@@ -119,7 +118,7 @@ export function runPnpmInProcess(args, options = {}) {
   })
   worker.on('exit', (code) => { finish({ exitCode: code ?? 0, signal: null }) })
 
-  const onAbort = () => { void worker.terminate() }
+  onAbort = () => { void worker.terminate() }
   if (options.signal) {
     if (options.signal.aborted) onAbort()
     else options.signal.addEventListener('abort', onAbort, { once: true })
@@ -132,6 +131,3 @@ export function runPnpmInProcess(args, options = {}) {
     cancel() { void worker.terminate() },
   }
 }
-
-/** Retained per-stream cap, exported so tests can assert the bound. */
-export const OUTPUT_TAIL_LIMIT = OUTPUT_LIMIT

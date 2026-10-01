@@ -229,7 +229,7 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 
 ```bash
 git clone --branch dsh-v0.2.0-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
-git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
+git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout d4f7a7962d1160e8d5d09fd9ab7f8669bad3ccd9  # dshmarket 1.66.7（构建期断言）
 # ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
 ```
 

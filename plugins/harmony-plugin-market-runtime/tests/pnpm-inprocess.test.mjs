@@ -106,3 +106,22 @@ test('runPnpmInProcess propagates a non-zero exit code', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('runPnpmInProcess forwards args and appends only --dir (never a reporter)', async () => {
+  const dir = makeTmp()
+  try {
+    const engine = join(dir, 'engine.mjs')
+    writeFileSync(engine, "process.stdout.write(JSON.stringify(process.argv.slice(2)) + '\\n'); process.exitCode = 0\n")
+    // The market appends --reporter=ndjson itself; the runner must not override it.
+    const handle = runPnpmInProcess(['add', '-w', 'pkg@1.2.3', '--reporter=ndjson'], { dir, entry: engine })
+    let out = ''
+    handle.stdout.on('data', (c) => { out += c.toString() })
+    const result = await handle.done
+    assert.equal(result.exitCode, 0)
+    const argv = JSON.parse(out.trim().split(/\r?\n/).filter(Boolean).pop())
+    assert.deepEqual(argv, ['add', '-w', 'pkg@1.2.3', '--reporter=ndjson', '--dir', dir])
+    assert.equal(argv.filter((a) => a.startsWith('--reporter')).length, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
