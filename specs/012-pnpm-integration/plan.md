@@ -19,7 +19,7 @@
 
 | 依赖 | 来源 | 用途 |
 |---|---|---|
-| `@pnpm/installing.deps-installer`（pnpm 11 线） | npm registry（构建期 fetch/物化） | 进程内安装引擎。**包名/签名 `[未验证]`，实现阶段 spike 核实** |
+| `pnpm` 包（11.28.3 线，完整 CLI bundle） | npm registry（构建期物化） | 进程内安装引擎。**spike 已证实**：物化整个 `pnpm` 包，进程内 `import('.../dist/pnpm.mjs')`。（`@pnpm/installing.deps-installer` 独立安装因 `@yarnpkg` 的 `patch:` 依赖不可行 —— 见 spike 结论） |
 | deepseek-harness（`../deepseek-harness`，dsh-v0.2.0-rc.2） | sibling 源码引用 | profile 目录约定、`dsh.profile.bundles` 维护函数、插件发现（**不改源码**） |
 | dsh-market（`../dsh-market`，固定 1.66.7） | sibling/submodule 源码引用 | `desktopProfiles` / `desktopPnpm` 契约（**不改源码**） |
 | 011 的 `src-main/market-runtime.js` | 本工程 | `BUNDLED_PNPM_PACKAGE`/`BUNDLED_PNPM_ENTRY_REL` 常量、路径 B 探测、`isParsableJs` 校验 |
@@ -43,7 +43,7 @@
 ## 3. 研究结论
 
 - **为什么只能进程内**：`spawn` 出的 node/pnpm 子进程在应用域被 SIGSYS（B★）；Electron 主进程自身能跑 JS，故把 pnpm 的 JS import 进主进程是唯一可行路线（011 路径 B）。
-- **进程内引擎包名**：pnpm v11 的安装引擎为 `@pnpm/installing.deps-installer`（`@pnpm/core` 止于 10.16 线）；导出 `install` / `mutateModules` / `addDependenciesToPackage` / `removeDependenciesFromPackage`。`[未验证]`：须 spike 确认实际可用入口与签名。
+- **进程内引擎（spike 已证实）**：采用 **`pnpm` 包本身**（`pnpm@11.28.3`，单包、纯 ESM、自带打包 CLI `dist/pnpm.mjs`）。进程内**以 CLI 方式**调用：设置 `process.argv`（`add|remove … --dir <profile> --reporter=…`）+ 缓存击穿 import（`?v=<ts>`，否则 ESM 缓存使第二次调用不重跑）。`@pnpm/installing.deps-installer` 独立安装因其 `@yarnpkg` 传递依赖携带 yarn `patch:` 规格而不可行（spike 实测）。详见 `logs/20261002-1/spike-pnpm-FINDINGS.md`。
 - **symlink/hardlink 规避**：pnpm 默认 `isolated` 布局建 symlink + `.pnpm` hardlink，均被 B1 禁；改用 `nodeLinker: hoisted`（扁平、无 `.pnpm` 虚拟 store）+ `packageImportMethod: copy`。dsh 自身 `initProfile` 写出的 profile 本就是 `nodeLinker: hoisted`（`packages/boot/app-boot/src/profile.ts:230-235`），形态一致。
 - **配置位置**：pnpm v11 起除 auth/registry 外设置写 `pnpm-workspace.yaml`（camelCase），不再读 `.npmrc`。
 - **进程内陷阱**：pnpm 引擎可能调 `process.exit`（须包装）、期望独占 `process.argv`（须保存恢复）、lifecycle 脚本会 spawn 子进程（须 `ignoreScripts`）。
@@ -173,7 +173,7 @@ interface DesktopPnpmHandleLike {
 | # | 决策 | 备选 | 理由 |
 |---|---|---|---|
 | D1 | 进程内调用（011 路径 B） | spawn PATH 上的 pnpm | spawn 在应用域必死（B★） |
-| D2 | 引擎用 `@pnpm/installing.deps-installer`（pnpm 11 线） | `@pnpm/core` | `@pnpm/core` 自 v11 起停止发布 |
+| D2 | 引擎用 **`pnpm` 包本身**（进程内 import 其 `dist/pnpm.mjs`，CLI 方式） | `@pnpm/installing.deps-installer` / `@pnpm/core` | spike 实测：`@pnpm/installing.deps-installer` 独立安装被 `@yarnpkg` 的 `patch:` 依赖阻断；`pnpm` 包自包含且进程内可用 |
 | D3 | Route 1：实现市场内置 `desktopProfiles`/`desktopPnpm` | 打 dsh-market 补丁（Route 2） | 零上游改动；鸿蒙无 git 恰好落在其 npm-only 边界内 |
 | D4 | `nodeLinker: hoisted` + `packageImportMethod: copy` | 默认 isolated | isolated 的 symlink/hardlink 被 B1 禁 |
 | D5 | `ignoreScripts: true` | 允许 lifecycle 脚本 | 平台（SIGSYS）+ 安全（不执行任意代码） |
@@ -196,13 +196,15 @@ interface DesktopPnpmHandleLike {
 
 ## 12. 待确认（实现阶段 spike 清单）
 
-| # | 事项 | 处置 |
+> **T0 spike 结论（2026-10-02，见 `logs/20261002-1/spike-pnpm-FINDINGS.md`）**：Q1–Q4 全部关闭，可行性成立。
+
+| # | 事项 | 状态 / 处置 |
 |---|---|---|
-| Q1 | `@pnpm/installing.deps-installer` 的实际入口、导出与调用签名 | spike：裸 Node 上 `import` 并尝试 add/remove，观察结果 |
-| Q2 | 引擎在 `nodeLinker: hoisted` + `packageImportMethod: copy` 下能否产出扁平 node_modules | spike：断言产物无 symlink/hardlink 且可被 `require.resolve` 解析 |
-| Q3 | 引擎是否 spawn 子进程（如 worker/脚本） | spike：安装过程监测子进程；必要时调整设置 |
-| Q4 | 引擎依赖闭包是否含原生模块 | spike：检查 `node_modules` 中的 `.node` 文件 |
-| Q5 | `desktopProfiles` 服务的准确 cordis 注册方式与 `desktopPnpm` 暴露方式 | 实现期对照市场源码验证 |
+| Q1 | 进程内引擎入口与调用方式 | ✅ **已定**：物化 `pnpm` 包，进程内 import `dist/pnpm.mjs`，设 argv + `--dir` + 缓存击穿 |
+| Q2 | hoisted + copy 下能否产出扁平 node_modules | ✅ **已验证**：递归扫描 0 symlink；真实目录 |
+| Q3 | 引擎是否 spawn 子进程 | ✅ **未观察到**（add/remove 均在主进程）；`dist/worker.js` 同进程，`[未验证]` 真机确认 |
+| Q4 | 引擎依赖闭包是否含原生模块 | ✅ 仅 `@reflink`（clone 用，da/win 平台）；**copy 路径不加载**，无需 aarch64 注入 |
+| Q5 | `desktopProfiles` 服务的准确 cordis 注册方式与 `desktopPnpm` 暴露方式 | 实现期对照市场源码（`dsh-market/src/index.ts:183,285-292`）验证 |
 | Q6 | 市场在 `config.profile: desktop` 下是否走 `desktopProfiles` 而非官方 Electron 分支 | 实现期验证；必要时调整 profile 配置 |
 
 ---

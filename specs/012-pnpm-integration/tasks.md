@@ -7,21 +7,18 @@
 
 > 约定：`[P]` = 可并行；任务按阶段依赖排序。文件路径对齐工程实际结构。
 
-## Phase 0 — Setup（可行性 spike，阻塞全部实现）
+## Phase 0 — Setup（可行性 spike，阻塞全部实现）✅ 已完成
 
-- [ ] **T0.1** 核实 `@pnpm/installing.deps-installer` 的入口、导出与调用签名（plan §12 Q1）
-  - 位置：`logs/20261002-1/spike-pnpm/`（临时脚本，不入库）
-  - 断言：能在裸 Node 上 `import` 成功并识别 `addDependenciesToPackage`/`removeDependenciesFromPackage`（或等价入口）
-- [ ] **T0.2** 验证进程内安装产出扁平 node_modules（plan §12 Q2）
-  - 断言：临时目录内 `pnpm add <小包>`（进程内）成功；`node_modules/<pkg>/package.json` 存在；无 symlink（`lstat().isSymbolicLink()===false`）
-- [ ] **T0.3** 检测引擎是否 spawn 子进程 / 依赖闭包是否含原生模块（plan §12 Q3/Q4）
-  - 断言：记录子进程行为与 `.node` 文件清单；据此决定是否需 aarch64 注入
-- [ ] **T0.4** 回填 spike 结论到 plan.md §12 与 §3
+> spike 结论：`logs/20261002-1/spike-pnpm-FINDINGS.md`。**引擎确定用 `pnpm` 包本身**（非 `@pnpm/installing.deps-installer`）。
+
+- [x] **T0.1** 核实进程内引擎入口与调用方式 → 采用 `pnpm` 包，进程内 import `dist/pnpm.mjs`
+- [x] **T0.2** 验证进程内安装产出扁平 node_modules → 递归扫描 0 symlink
+- [x] **T0.3** 检测 spawn 子进程 / 原生模块 → 未观察子进程；仅 `@reflink`（copy 路径不加载）
+- [x] **T0.4** 回填 spike 结论到 plan.md §12 与 §3
 
 ## Phase 1 — Foundational（构建期物化与版本固定）
 
-- [ ] **T1.1** `collect-dsh.mjs`：新增 `collectMarketPNPM()`，物化 pnpm 引擎到 `dsh-dist/node_modules/dsh-market-pnpm/`（FR-012-001/003/004）
-  - 依赖：T0.*
+- [ ] **T1.1** `collect-dsh.mjs`：新增 `collectMarketPNPM()`，物化 **`pnpm` 包**到 `dsh-dist/node_modules/pnpm/`（裁剪非目标 reflink 二进制与 Windows exe）；同步更新 `market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL` 为 `['node_modules','pnpm','dist','pnpm.mjs']`（FR-012-001/003/004）
 - [ ] **T1.2** `collect-dsh.mjs`：新增 pnpm 引擎版本常量 + 构建期断言（FR-012-002）
 - [ ] **T1.3** `collect-dsh.mjs`：新增 `assertDshMarketVersion()`（修 1.26.0/1.29.2/1.66.7 不一致；FR-012-002 同族 / plan R8）
 - [ ] **T1.4** 修正陈旧版本声明：`README.md`、`README_zh.md`、`profiles/desktop/package.json`、`specs/201-dsh-market/*`（对齐 1.66.7）
