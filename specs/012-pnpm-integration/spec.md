@@ -64,7 +64,9 @@
 
 ### 3.1 构建期物化与版本固定
 
-- **FR-012-001**：收集阶段 MUST 把纯 JS pnpm 引擎（**`pnpm` 包本身**，含其 `dist/pnpm.mjs` 打包 CLI）物化到 `dsh-dist/node_modules/pnpm/`，入口为 `dist/pnpm.mjs`（对齐 `src-main/market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL`）。`[源码]`（引擎选型见 spike：`@pnpm/installing.deps-installer` 因 `@yarnpkg` 的 `patch:` 依赖独立安装不可行。）
+- **FR-012-001**：收集阶段 MUST 把纯 JS pnpm 引擎（**`pnpm` 包本身**）物化到 `dsh-dist/node_modules/dsh-market-pnpm/`（独立目录，避开 `pnpm deploy` 已放置的 dsh 自身 `pnpm` 依赖），入口为 `bin/pnpm.cjs`（对齐 `src-main/market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL`）。`[源码]`
+  - **版本固定为 `pnpm@10.34.6`**：pnpm@11 的 store v11 依赖 `node:sqlite`，本 Electron/Node 运行时**无该 binding**（真机实测 `No such binding: sqlite`）；pnpm@10 不使用 `node:sqlite`。`[设备实测]`
+  - 引擎选型过程见 spike：`@pnpm/installing.deps-installer` 因 `@yarnpkg` 的 `patch:` 依赖独立安装不可行；pnpm@11 因 `node:sqlite` 不可用。
 - **FR-012-002**：系统 MUST 以**集中常量**固定 pnpm 版本，并在构建期（收集阶段）断言物化产物的版本与常量一致；不一致即 `process.exit(1)`。`[设计]`
 - **FR-012-003**：物化 MUST 幂等（目标入口已存在则跳过）；pnpm 引擎来源缺失时 MUST 硬失败，不得产出残缺部署包。`[设计]`
 - **FR-012-004**：物化后 MUST 校验入口文件存在且非空（复用 011 的 `isParsableJs`），损坏产物不得被记录为就绪。`[源码]`
@@ -80,10 +82,10 @@
 ### 3.3 进程内 pnpm 调用
 
 - **FR-012-010**：系统 MUST 在 **Electron 主进程内进程内调用** pnpm 安装引擎完成插件 `add` / `remove`，MUST NOT spawn 任何 node/pnpm 子进程。`[设计]`
-- **FR-012-011**：进程内调用 MUST 在 **`worker_threads` worker** 中运行 pnpm CLI，使 pnpm 的 `process.exit` 只退出 worker、不终止 Electron 主进程（无需包装 `process.exit`）。`[设计]`
+- **FR-012-011**：进程内调用 MUST 在 **`worker_threads` worker** 中运行 pnpm CLI，使 pnpm 的 `process.exit` 只退出 worker、不终止 Electron 主进程（无需包装 `process.exit`）。worker MUST 在 import 引擎前把 `process.execPath` 改为可写（no-op setter）——Electron 下该属性只读而 pnpm 会赋值（真机实测 `Cannot assign to read only property 'execPath'`）。`[设备实测]`
 - **FR-012-012**：worker MUST 自行设置 `process.argv`（隔离），主进程 argv MUST NOT 被改动。`[设计]`
 - **FR-012-013**：进程内安装 MUST 强制禁用 lifecycle 脚本（`ignoreScripts: true`），既是平台约束（否则 spawn 子进程 SIGSYS），也是安全属性（不执行插件作者任意代码）。`[设计]`
-- **FR-012-014**：进程内安装 MUST 产出**扁平 node_modules**（hoisted），文件中不出现 symlink/hardlink（鸿蒙 B1 禁止）。`[源码]`
+- **FR-012-014**：进程内安装 MUST 产出**扁平 node_modules**（hoisted），且 MUST 规避 symlink/hardlink（鸿蒙 B1 禁止）。pnpm 在 `node_modules/.bin` 为依赖二进制建 symlink，会被平台拒绝（`EACCES`）；worker MUST 把 `fs`/`fs.promises.symlink` 在 `EACCES`/`EPERM` 时**回退为 copy**（真机实测：bin 落地为真实文件，安装完成）。`[设备实测]`
 - **FR-012-015**：进程内调用 MUST 接受来自市场的目标 spec（含 `name@version`）并写入 profile 目录，且与 dsh 的 profile 目录约定（`$DSH_HOME/profiles/desktop`）一致。`[源码]`
 
 ### 3.4 市场契约对接（desktopProfiles / desktopPnpm）
@@ -112,7 +114,7 @@
 
 | 实体 | 描述 | 关键属性 |
 |------|------|----------|
-| pnpm 引擎产物（`pnpm` 包） | 随包物化的纯 JS pnpm CLI | 入口 `dsh-dist/node_modules/pnpm/dist/pnpm.mjs`；版本常量 `11.28.3`；worker 线程内 import |
+| pnpm 引擎产物（`dsh-market-pnpm`） | 随包物化的纯 JS pnpm CLI | 入口 `dsh-dist/node_modules/dsh-market-pnpm/bin/pnpm.cjs`；版本常量 `10.34.6`；worker 线程内 import |
 | profile pnpm 配置 | desktop profile 的 `pnpm-workspace.yaml` | `nodeLinker: hoisted`、`packageImportMethod: copy`、`ignoreScripts: true`、`storeDir`、`minimumReleaseAge: 0` |
 | desktopPnpm 服务 | 暴露给市场的进程内包管理器 | `runPlugin(args, invokingDir, signal): DesktopPnpmHandleLike` |
 | DesktopPnpmHandleLike | 一次安装操作的句柄 | `stdout`、`stderr`、`done: Promise<{exitCode,signal}>`、`cancel()` |

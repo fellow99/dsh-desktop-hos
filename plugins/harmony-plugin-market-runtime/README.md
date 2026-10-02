@@ -33,7 +33,10 @@ This plugin runs the pnpm CLI in a **`worker_threads.Worker`**:
 
 ## Requirements
 
-- The main process sets `DSH_PNPM_ENGINE` to the materialized pnpm CLI entry (`<DSH_ROOT>/node_modules/pnpm/dist/pnpm.mjs`), placed by `scripts/collect-dsh.mjs`'s `collectMarketPNPM()`.
+- The main process sets `DSH_PNPM_ENGINE` to the materialized pnpm CLI entry (`<DSH_ROOT>/node_modules/dsh-market-pnpm/bin/pnpm.cjs`), placed by `scripts/collect-dsh.mjs`'s `collectMarketPNPM()`. The directory is distinct from `node_modules/pnpm` (which `pnpm deploy` populates with dsh's own `pnpm` dependency).
+- The engine is **pnpm@10.34.6**: pnpm@11's store v11 needs `node:sqlite`, which this Electron/Node runtime lacks (`No such binding: sqlite` on device); pnpm@10 does not.
+- The worker makes `process.execPath` writable (no-op setter) before importing the engine — Electron's is read-only and pnpm assigns it (device: `Cannot assign to read only property 'execPath'`).
+- The worker patches `fs`/`fs.promises.symlink` to **copy instead of symlink** on `EACCES`/`EPERM` — pnpm creates a symlink in `node_modules/.bin` for every dependency binary, and HarmonyOS forbids symlinks. The bin lands as a real file.
 - The profile's `pnpm-workspace.yaml` sets `nodeLinker: hoisted`, `packageImportMethod: copy`, `ignoreScripts: true`, `minimumReleaseAge: 0`, and a sandbox-local `storeDir`.
 
 ## Known limitations

@@ -28,7 +28,7 @@ const requireBuiltinNode = resolve(projectRoot, 'native/require-builtin/require_
  * `collectMarketPNPM()` and asserted before it is recorded as ready.
  * See `docs/012-pnpm+dsh-market.md` and `logs/20261002-1/spike-pnpm-FINDINGS.md`.
  */
-const PNPM_VERSION = '11.28.3';
+const PNPM_VERSION = '10.34.6';
 
 /**
  * Pinned dsh-market version — the single source of truth asserted at build
@@ -748,6 +748,17 @@ function assertDshMarketVersion() {
  *  - `CHANGELOG.md`
  */
 function prunePnpmEngine(root) {
+  // pnpm@10 ships reflink binaries at dist/ top level; pnpm@11 nests them under
+  // dist/node_modules/@reflink. Remove non-target ones (copy method loads none).
+  const distDir = resolve(root, 'dist');
+  if (existsSync(distDir)) {
+    for (const entry of readdirSync(distDir)) {
+      if (/^reflink\.(darwin|win32)/.test(entry)) {
+        rmSync(resolve(distDir, entry), { force: true });
+        console.log(`[collect-dsh] 清理 pnpm 非目标平台 reflink: ${entry}`);
+      }
+    }
+  }
   const reflinkDir = resolve(root, 'dist/node_modules/@reflink');
   if (existsSync(reflinkDir)) {
     for (const entry of readdirSync(reflinkDir)) {
@@ -787,7 +798,7 @@ function assertPnpmEngineArtifact(dest) {
     console.error(`[collect-dsh] pnpm 引擎版本不符: 期望 ${PNPM_VERSION}，实际 ${version}`);
     process.exit(1);
   }
-  const entry = resolve(dest, 'dist', 'pnpm.mjs');
+  const entry = resolve(dest, 'bin', 'pnpm.cjs');
   let size = 0;
   try { size = statSync(entry).size; } catch { /* missing */ }
   if (!(size > 0)) {
@@ -804,7 +815,10 @@ function assertPnpmEngineArtifact(dest) {
  * 以宿主 pnpm 安装到临时目录后整包拷贝；版本不符即硬失败；幂等。
  */
 function collectMarketPNPM() {
-  const dest = resolve(distDir, 'node_modules/pnpm');
+  // Distinct dir, NOT node_modules/pnpm: `pnpm deploy` already places dsh's own
+  // `pnpm` dependency (currently 11.7.0) at node_modules/pnpm, and overwriting
+  // it would fight dsh's closure. Keep our pinned engine self-contained here.
+  const dest = resolve(distDir, 'node_modules/dsh-market-pnpm');
   if (existsSync(resolve(dest, 'package.json'))) {
     assertPnpmEngineArtifact(dest);
     console.log('[collect-dsh] pnpm 引擎已物化');
