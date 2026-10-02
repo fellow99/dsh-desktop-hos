@@ -50,6 +50,20 @@
 - id: ui-open-in-app
   disabled: true
 
+# 鸿蒙桌面版：禁用客户端「权限」行（@deepseek-ai/dsh-client-ui-permission-presets）。
+#
+# 宿主 permission 插件（@deepseek-ai/dsh-permission-presets，行 id `permission`，见上）声明
+# `static inject = ['shell', 'approval', 'sessions', 'sessionProjections']`，并在
+# `ctx.shell.sandboxMode === undefined` 时构造即抛错；本平台 shell/subprocess 已禁用，
+# 故该服务无法挂载 → 路由 `/api/permissionPresets/*` 返回 404。
+#
+# 客户端 ui-permission 在 apply() 时**立即**创建 PermissionCatalogDirectory 并调用
+# `permissionPresets/catalog`（catalog.ts:134），失败后把 `transport failure ... HTTP 404`
+# 显示在「通用设置 → 权限」。本平台无进程沙箱，权限预设（sandbox + approval）不适用，
+# 故禁用该客户端行——与其宿主行一致；`/permission` 命令也随宿主行一并消失。
+- id: ui-permission
+  disabled: true
+
 # 鸿蒙桌面版：强制 webserver 绑定 0.0.0.0（全网卡）。
 # 鸿蒙 NEXT 下 Chromium 渲染进程访问 127.0.0.1 存在 loopback 网络隔离，渲染进程须走局域网 IP。
 # 用 profile 覆盖直接设 host（literal），绕过 --host 参数解析。
