@@ -112,11 +112,13 @@ const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
  * session.create 报 agent-preset-invalid（工作区选不中、点聊天反复弹「选择工作区」）。preset 审计
  * inactiveRows 会跳过 disabled: true 的行，禁用后 preset 可正常挂载。幂等：已禁用则不重复改写。
  */
-// 注：0.2.0 的 preset 文件里没有 10 空格的 `persistent-shell` 顶层行（minimal 的持久 shell
-// 组是 14 空格嵌套在 persistent-shell group 内，补丁不认），故不再列入禁用表 —— 避免误伤 minimal。
+// 注：minimal 的常驻终端组 `persistent-shell` 是 10 空格顶层行（其子行 pty/terminal-bash/… 为
+// 14 空格），故可由本表统一禁用；禁用后该组整棵不挂载（其子行随之失效）。
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': 'bash 终端依赖 shell/node-pty（MVP 已禁用）',
   'tool-fs-search': '内容搜索依赖 subprocess 跑 ripgrep（node-pty 已禁用）',
+  'persistent-shell': 'minimal 的常驻终端组（pty / terminal-bash / persistent-bash），依赖 PTY/terminals（node-pty 无 aarch64 产物，本平台禁用）',
+  'tool-plugin-manager': "plugin_manager 工具 inject ['tools','pluginManager','sandboxPolicy']（本平台沙箱不可用）；standard/PTC 上游已 disabled:true，cordis 未禁",
 };
 
 /**
@@ -178,8 +180,8 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   {
     id: 'exec',
     name: 'harmony-plugin-exec',
-    requireRow: 'tool-bash',
-    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash）',
+    requireRow: 'persona',
+    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash，并为 minimal 提供其终端组的替代）',
   },
 ];
 

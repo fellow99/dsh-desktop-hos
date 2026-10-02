@@ -352,11 +352,13 @@ function applySharpStub() {
  * inactiveRows 会跳过 disabled: true 的行，故禁用后 preset 可正常挂载（终端/内容搜索能力按
  * §18.3 取舍，文件读写 tool-fs 等不依赖子进程的工具保留）。
  */
-// 注：0.2.0 的 preset 文件里没有 10 空格的 `persistent-shell` 顶层行（minimal 的持久 shell
-// 组是 14 空格嵌套在 persistent-shell group 内，补丁不认），故不再列入禁用表 —— 避免误伤 minimal。
+// 注：minimal 的常驻终端组 `persistent-shell` 是 10 空格顶层行（其子行 pty/terminal-bash/… 为
+// 14 空格），故可由本表统一禁用；禁用后该组整棵不挂载（其子行随之失效）。
 const HARMONY_DISABLED_PRESET_ROWS = {
   'tool-bash': '依赖 shell 服务（bash 终端，node-pty 子进程，MVP 已禁用）',
   'tool-fs-search': '依赖 subprocess 跑 ripgrep 内容搜索（node-pty 已禁用）',
+  'persistent-shell': 'minimal 的常驻终端组（pty / terminal-bash / persistent-bash），依赖 PTY/terminals（node-pty 无 aarch64 产物，本平台禁用）',
+  'tool-plugin-manager': "plugin_manager 工具 inject ['tools','pluginManager','sandboxPolicy']（本平台沙箱不可用）；standard/PTC 上游已 disabled:true，cordis 未禁",
 };
 
 /**
@@ -407,8 +409,8 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   {
     id: 'exec',
     name: 'harmony-plugin-exec',
-    requireRow: 'tool-bash',
-    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash）',
+    requireRow: 'persona',
+    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash，并为 minimal 提供其终端组的替代）',
   },
 ];
 
