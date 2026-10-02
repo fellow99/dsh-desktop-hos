@@ -18,7 +18,7 @@
 
 ## Phase 1 — Foundational（构建期物化与版本固定）
 
-- [ ] **T1.1** `collect-dsh.mjs`：新增 `collectMarketPNPM()`，物化 **`pnpm` 包**到 `dsh-dist/node_modules/pnpm/`（裁剪非目标 reflink 二进制与 Windows exe）；同步更新 `market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL` 为 `['node_modules','pnpm','dist','pnpm.mjs']`（FR-012-001/003/004）
+- [ ] **T1.1** `collect-dsh.mjs`：新增 `collectMarketPNPM()`，物化 **`pnpm` 包**到 `dsh-dist/node_modules/dsh-market-pnpm/`（裁剪非目标 reflink 二进制与 Windows exe）；同步更新 `market-runtime.js` 的 `BUNDLED_PNPM_ENTRY_REL` 为 `['node_modules','dsh-market-pnpm','dist','pnpm.mjs']`（FR-012-001/003/004）
 - [ ] **T1.2** `collect-dsh.mjs`：新增 pnpm 引擎版本常量 + 构建期断言（FR-012-002）
 - [ ] **T1.3** `collect-dsh.mjs`：新增 `assertDshMarketVersion()`（修 1.26.0/1.29.2/1.66.7 不一致；FR-012-002 同族 / plan R8）
 - [ ] **T1.4** 修正陈旧版本声明：`README.md`、`README_zh.md`、`profiles/desktop/package.json`、`specs/201-dsh-market/*`（对齐 1.66.7）
