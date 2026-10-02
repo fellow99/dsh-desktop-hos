@@ -50,11 +50,12 @@ const RUNTIME_BIN_DIRNAME = 'runtime-bin';
 /** `dsh-market/src/dsh-cli.ts:328-340` 的 `dshArgv()` 回退到裸 `dsh` 时依赖的 CLI 入口。 */
 const DSH_CLI_REL = ['lib', 'bin.js'];
 /**
- * 路径 B：pnpm 的 JavaScript 物化成的包名（布局由 `scripts/collect-dsh.mjs` 物化阶段决定；
- * 本引导只按约定路径检测，不 import 它）。`plan.md` §4.2「物化进 dsh-dist/node_modules/」。
+ * 路径 B：pnpm 的 JavaScript 物化成的包名（布局由 `scripts/collect-dsh.mjs` 的 `collectMarketPNPM()`
+ * 决定；本引导只按约定路径检测，不 import 它）。引擎即 `pnpm` 包本身，进程内由
+ * `harmony-plugin-market-runtime` 在 worker 线程中 import 其 `dist/pnpm.mjs`（spec 012）。
  */
 const BUNDLED_PNPM_PACKAGE = 'dsh-market-pnpm';
-const BUNDLED_PNPM_ENTRY_REL = ['node_modules', BUNDLED_PNPM_PACKAGE, 'lib', 'index.mjs'];
+const BUNDLED_PNPM_ENTRY_REL = ['node_modules', BUNDLED_PNPM_PACKAGE, 'bin', 'pnpm.cjs'];
 /**
  * 路径 C 候选目录，对齐 `dsh-market/src/dsh-cli.ts:172-195` 的 `toolSearchDirs()` 与
  * `spec.md` §4.1（设备 HNP 落点 + 常见 POSIX / homebrew 目录）。`~` 以 `HOME` 展开。

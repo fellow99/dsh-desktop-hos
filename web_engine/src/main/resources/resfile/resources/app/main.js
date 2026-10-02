@@ -370,6 +370,10 @@ function ensureDesktopProfile(home) {
     if (changed) writeFileSync(destPkg, JSON.stringify(cur, null, 2) + '\n');
     for (const name of readdirSync(src)) {
       if (name === 'package.json') continue;
+      // 012: never overwrite the profile's pnpm-workspace.yaml — the market and
+      // the user edit it (release-age excludes, registry). It is created once by
+      // ensureProfilePnpmConfig() and then owned by the profile.
+      if (name === 'pnpm-workspace.yaml') continue;
       const df = join(dest, name);
       // 种子文件（cordis.patch.yml 等）始终用最新版覆盖，确保桌面壳的 patch 层
       // （如 webserver host 覆盖）在应用升级后仍能生效（package.json 单独合并以保留用户插件）。
@@ -377,6 +381,36 @@ function ensureDesktopProfile(home) {
     }
   } catch (err) {
     console.error('[dsh-harmony] ensureDesktopProfile 失败:', err);
+  }
+}
+
+/** 012: create the profile's pnpm-workspace.yaml at most once (idempotent, preserves edits). */
+const PROFILE_PNPM_WORKSPACE = `packages:
+  - .
+
+nodeLinker: hoisted
+packageImportMethod: copy
+ignoreScripts: true
+minimumReleaseAge: 0
+storeDir: .pnpm-store
+`;
+
+/**
+ * 012-pnpm-integration：确保 profile 的 `pnpm-workspace.yaml` 存在。
+ *
+ * 只在缺失时创建（不覆盖）：该文件是进程内 pnpm 的引擎配置（hoisted / copy /
+ * ignore-scripts / 沙箱内 store），同时**市场会改写它**（release-age 排除、allowBuilds），
+ * 用户也可能自定义 registry。启动期强制回盖会清掉这些改动（FR-012-008/009）。
+ */
+function ensureProfilePnpmConfig(home) {
+  const dest = join(home, 'profiles', 'desktop', 'pnpm-workspace.yaml');
+  if (existsSync(dest)) return;
+  try {
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, PROFILE_PNPM_WORKSPACE);
+    console.log('[dsh-harmony] 已写入 profile pnpm-workspace.yaml');
+  } catch (err) {
+    console.error('[dsh-harmony] 写入 profile pnpm-workspace.yaml 失败（不阻塞）:', err.message);
   }
 }
 
@@ -492,6 +526,7 @@ async function startHost() {
   }
   console.log('[dsh-harmony] DSH_HOME =', process.env.DSH_HOME);
   ensureDesktopProfile(process.env.DSH_HOME);
+  ensureProfilePnpmConfig(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   ensureDshPluginsProfileLink(process.env.DSH_HOME);
   // 011-runtime-provisioning：运行时供给（探测 A/B/C → 校验 → 生成 dsh shim → 前置 PATH / 设 PNPM_HOME）。
@@ -499,6 +534,10 @@ async function startHost() {
   // ensureSandboxHome()（HOME 已指向沙箱目录）；早于 runProfile()（dshmarket 的 spawnEnv() 在调用时读
   // process.env.PATH）。失败仅影响市场安装通道，不阻塞启动。
   setupMarketRuntime({ dshRoot: DSH_ROOT });
+  // 012-pnpm-integration：进程内 pnpm 引擎入口。由 collect-dsh 的 collectMarketPNPM() 物化到
+  // dsh-dist/node_modules/pnpm；harmony-plugin-market-runtime 读 DSH_PNPM_ENGINE 在 worker 中 import 它。
+  process.env.DSH_PNPM_ENGINE = join(DSH_ROOT, 'node_modules', 'dsh-market-pnpm', 'bin', 'pnpm.cjs');
+  console.log('[dsh-harmony] DSH_PNPM_ENGINE =', process.env.DSH_PNPM_ENGINE);
   // 用户目录写入白名单：必须在 runProfile 之前设置，writableRoots 每次围栏判定都读它。
   installExtraWritableRoots();
   process.env.DSH_DISABLE_HMR = '1';
