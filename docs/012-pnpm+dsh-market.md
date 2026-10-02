@@ -1,12 +1,15 @@
 # 012 — pnpm 集成 + dsh-market 进程内安装插件（讨论过程与方案）
 
 > 模块：012-pnpm+dsh-market
-> 状态：**方案已定，未实现**
+> 状态：**已实现并真机验证通过（2026-10-02，设备 3QC0226526001227）**
 > 记录日期：2026-10-01（最后更新 2026-10-02）
 > 关联文档：
 > - [`docs/pnpm对接问题排查.md`](./pnpm对接问题排查.md) —— 故障排查记录（本方案的事实基础，尤其 §6 的 SIGSYS 实测与 §11 的初步分析）
-> - [`specs/011-runtime-provisioning/`](../specs/011-runtime-provisioning/) —— 运行时供给模块的完整设计（**路径 B = 本方案**）；其探测/选路/校验代码已实现，唯「进程内调用」未投入
-> - [`specs/201-dsh-market/`](../specs/201-dsh-market/) —— dsh-market 集成模块（含陈旧之处，见 §7.1）
+> - [`specs/012-pnpm-integration/`](../specs/012-pnpm-integration/) —— **本需求的规范四件套**（spec / plan / tasks / test-cases）
+> - [`specs/011-runtime-provisioning/`](../specs/011-runtime-provisioning/) —— 运行时供给模块（**路径 B = 本方案**）
+> - [`specs/201-dsh-market/`](../specs/201-dsh-market/) —— dsh-market 集成模块（已更新为 `desktopProfiles`/`desktopPnpm` 契约）
+
+> **本文件的结构说明**：§1–§11 是**设计讨论记录**（含当时的选型与 `未验证` 判断）；**§12–§15 是 as-built 结果**（规范交付、实现、真机测试、提交），其中记录了实现阶段对 §4/§5/§8 若干选型的**修正**。两者冲突时以 §12–§15 为准。
 
 ---
 
@@ -417,4 +420,153 @@ Electron 主进程（Node 22.17，可跑 JS）
 
 ---
 
-*本文件由 2026-10-01 ~ 2026-10-02 的讨论沉淀；事实以源码为准，`未验证` 项落地前须复核。*
+*本文件由 2026-10-01 ~ 2026-10-02 的讨论沉淀；§1–§11 为设计讨论，§12–§15 为 as-built；事实以源码/真机为准。*
+
+---
+
+## 12. 交付的规范文档（specs）
+
+> 按用户要求，本需求模块放在 **`dsh-desktop-hos/specs/`**（不进父工程 specs）；采用工程既有的手写 spec 格式（无 `.specify/`）。
+
+### 12.1 新建：`specs/012-pnpm-integration/`
+
+| 文件 | 内容 |
+|---|---|
+| `spec.md` | 功能规格：FR-012-001..026（物化/版本断言、profile pnpm 配置、进程内调用、市场契约、失败可见性、安全） |
+| `plan.md` | 技术方案：引擎选型、worker 线程调用、文件清单、决策记录、风险、spike 清单 |
+| `tasks.md` | 依赖排序任务（Phase 0 可行性 spike → Phase 1 物化 → Phase 2 引擎 → Phase 3 契约 → …→ Phase 7 回归） |
+| `test-cases.md` | 20 条用例（B 构建期 6 / U 单元 5 / D 真机 9） |
+
+关键 FR（as-built 后）：
+- **FR-012-001**：物化 `pnpm` 包到 `dsh-dist/node_modules/dsh-market-pnpm/`，入口 `bin/pnpm.cjs`；**版本固定 `10.34.6`**（原因见 §14 P1）。
+- **FR-012-006~009**：profile 的 `pnpm-workspace.yaml`（`nodeLinker: hoisted`、`packageImportMethod: copy`、`ignoreScripts: true`、`minimumReleaseAge: 0`、沙箱内 `storeDir`）。
+- **FR-012-010~015**：进程内调用（worker 线程；不 spawn 子进程；execPath 处理；symlink 回退见 §14）。
+- **FR-012-016~020**：注册 `desktopProfiles`/`desktopPnpm`（`DesktopPnpmLike.runPlugin`），**不改 dsh-market 源码**。
+
+### 12.2 完善：`specs/201-dsh-market/{spec,plan}.md`
+
+从「spawn 方案 + 安装通道 `[NEEDS CLARIFICATION]`」改为 **`desktopProfiles`/`desktopPnpm` 契约模型**：
+- 版本由 `1.26.0`/`1.29.2` 统一为 **`1.66.7`**（并加构建期断言 FR-201-018）。
+- 新增 FR-201-011~017：宿主提供 `desktopProfiles`（012 实现）→ 市场经 `desktopPnpm.runPlugin` 执行 add/remove；bundles 维护走 dsh 进程内函数。
+- 数据流：`市场 UI → POST /dsh-market/install → desktopProfiles 特性检测 → desktopPnpm.runPlugin → 进程内 pnpm`。
+
+---
+
+## 13. 实现（as-built）
+
+### 13.1 新增/修改文件
+
+| 文件 | 类型 | 作用 |
+|---|---|---|
+| `plugins/harmony-plugin-market-runtime/` | **新增** | host-plane **bundle**：提供 `desktopProfiles` + `desktopPnpm` |
+| ├ `package.json` | 新增 | `name=harmony-plugin-market-runtime`，`dsh.bundle.patch=cordis.patch.yml` |
+| ├ `cordis.patch.yml` | 新增 | `insert` 自身行（列在 `dshmarket` **之前**） |
+| ├ `lib/index.js` | 新增 | `apply(ctx)`：`ctx.provide('desktopProfiles', …)` + `ctx.provide('desktopPnpm', { runPlugin })` |
+| ├ `lib/pnpm-inprocess.js` | 新增 | 父侧 runner：`new Worker` → `{stdout, stderr, done, cancel}` |
+| ├ `lib/pnpm-worker.mjs` | 新增 | worker 入口：合成 `process.argv` → `import(引擎)`；含 **execPath 修复 + symlink→copy 回退** |
+| ├ `tests/pnpm-inprocess.test.mjs` | 新增 | 7 条单测（假引擎，无网络） |
+| `scripts/collect-dsh.mjs` | 改 | 新增 `collectMarketPNPM()`（物化引擎+裁剪）、`assertDshMarketVersion()`；step 0b 断言市场版本 |
+| `src-main/main.js` | 改 | 设 `DSH_PNPM_ENGINE`；`ensureProfilePnpmConfig()`（**只创建不覆盖**）；`ensureDesktopProfile` 跳过回盖 `pnpm-workspace.yaml` |
+| `src-main/market-runtime.js` | 改 | `BUNDLED_PNPM_PACKAGE='dsh-market-pnpm'`、`BUNDLED_PNPM_ENTRY_REL=[…,'bin','pnpm.cjs']` |
+| `profiles/desktop/package.json` | 改 | dshmarket `1.66.7`；bundles 增加 `harmony-plugin-market-runtime`（在 dshmarket 前） |
+| `profiles/desktop/pnpm-workspace.yaml` | 新增 | profile pnpm 配置种子 |
+
+### 13.2 关键设计：worker 线程
+
+spike 发现 `await import('pnpm/dist/pnpm.mjs')` **341ms 就 resolve**，但 pnpm main 火忘式异步继续、且从不调 `process.exit` —— **无法从 import/exit 得知完成**。故改为把 pnpm CLI 放进 **`worker_threads.Worker`**，一次解决四件事：
+
+| 问题 | worker 的解法 |
+|---|---|
+| 完成检测 | worker 事件循环排空 → 退出 → `worker.on('exit', code)` |
+| 退出码 | worker 退出码即 pnpm 退出码（成功 0 / 失败非 0） |
+| `process.exit` | 只退出 worker，不杀主进程 |
+| ESM 缓存 | 每次 `new Worker` 全新模块图，无需缓存击穿 |
+
+worker 在 `import` 前做两项修补（见 §14）：`process.execPath` no-op setter；`fs`/`fs.promises.symlink` 在 `EACCES/EPERM` 时回退 copy。
+
+### 13.3 与 §8 设计的差异（实现阶段修正）
+
+| 项 | §8 原设计 | as-built | 原因 |
+|---|---|---|---|
+| 引擎 | `@pnpm/installing.deps-installer` | **`pnpm` 包本身**（`pnpm@10.34.6`） | deps-installer 独立安装被 `@yarnpkg` 的 `patch:` 依赖阻断；pnpm 包自包含 |
+| 运行方式 | 直接 `import` + 包装 `process.exit` + 保存/恢复 argv | **worker 线程** + execPath no-op setter | 完成检测 + `process.exit` 隔离 + ESM 缓存（见 §13.2） |
+| 引擎目录 | `dsh-dist/node_modules/dsh-market-pnpm/lib/index.mjs` | `dsh-dist/node_modules/dsh-market-pnpm/{bin,dist}` | 直接用 `pnpm` 包结构；且须避开 `pnpm deploy` 放置的 dsh 自身 `pnpm` 依赖 |
+| 版本 | pnpm@11 | **pnpm@10.34.6** | pnpm@11 依赖 `node:sqlite`，运行时无该 binding（§14 P1） |
+| symlink | 「hoisted 无 symlink」即够 | 额外 **symlink→copy 回退** | pnpm 仍为 `.bin` 建 symlink，鸿蒙 `EACCES`（§14 P3） |
+
+---
+
+## 14. 真机测试结果
+
+> 设备 `3QC0226526001227`（HarmonyOS 6.1.0.135 / API 24）；debug 签名 HAP ≈492MB。
+> 完整报告：`logs/20261002-1/TEST_REPORT.md`（gitignored）。
+
+### 14.1 结论
+
+**端到端打通**：市场一键**安装/卸载**插件，经宿主 `desktopPnpm` 服务在 **worker 线程内进程式运行 pnpm**；无子进程、无 symlink，安装后插件 `hot:true / live`。
+
+### 14.2 实现阶段发现并修复的三个平台问题
+
+| # | 问题 | 现象 | 修复 |
+|---|---|---|---|
+| **P1** | pnpm@11 依赖 `node:sqlite` | 引擎 import 抛 `No such binding: sqlite`（Electron/Node 运行时无该 binding） | 引擎改用 **pnpm@10.34.6**（不使用 node:sqlite）；`PNPM_VERSION` 常量 |
+| **P2** | Electron `process.execPath` **只读** | pnpm `@pnpm/config#getConfig` 无条件 `process.execPath = node` → `Cannot assign to read only property 'execPath'` | worker 在 import 前把 `process.execPath` 设为 **no-op setter**（保留真实值） |
+| **P3** | 鸿蒙**禁 symlink**，pnpm 仍建 `.bin` 软链 | `EACCES: symlink '../js-yaml/bin/js-yaml.js' -> '.bin/js-yaml'` → 安装失败 `exit=-13` | worker 把 `fs`/`fs.promises.symlink` 在 `EACCES/EPERM` 时**回退为 copy**；bin 落地为真实文件 |
+
+### 14.3 用例结果
+
+| 用例 | 项 | 结果 | 证据 |
+|---|---|---|---|
+| TC-D09 | 路径 B 就位 | ✅ | `__marketRuntime` path=B, ok=true |
+| TC-D08 | 诊断探针 | ✅ | `__marketRuntimePnpm` = {profile:desktop, engineEntry:…/dsh-market-pnpm/bin/pnpm.cjs, engineOk:true} |
+| — | 服务注册（desktopProfiles/desktopPnpm） | ✅ | 插件加载且市场 `desktopPnpm` 分支被采用 |
+| TC-D01 | 市场一键安装（进程内） | ✅ | `POST /dsh-market/install` → 200 `{ok:true,hot:true,exitCode:0}`；`dsh-answer-reviewer@0.7.6` 落地 |
+| TC-D07 | 安装后 live | ✅ | activation `state:"live"`（bundle patch 热加载） |
+| TC-D02 | 无 node/pnpm 子进程 | ✅ | 安装 ndjson 的 `pid` = 应用主进程 PID（55779），非子进程 |
+| TC-D03 | 无 symlink / bin 为真实文件 | ✅ | profile node_modules 递归扫描 symlinkCount=**0**；`.bin/{cordis,js-yaml}` 均 file |
+| TC-D04 | 卸载（进程内） | ✅ | `POST /dsh-market/uninstall {name}` → 200 `{ok:true,exitCode:0}`；包目录消失、deps 移除 |
+| TC-D05 | 失败不崩、不毁 profile | ✅ | 修复前的一次失败安装返回非零 + 可读错误，主进程存活、profile 可启动 |
+| TC-D06 | 取消安装 | ⏭ 未专项测试 | `cancel()` = `worker.terminate()`（best-effort） |
+| U | 单元测试 | ✅ | `node --test` 7/7 通过 |
+
+市场日志实证（`.dsh/profiles/desktop/.dsh-market/log.ndjson`）：
+```
+{"event":"install","detail":"dsh-answer-reviewer@0.7.6 exit=0 hot=true"}
+{"event":"hot-mount","detail":"dsh-answer-reviewer: live"}
+```
+
+### 14.4 构建/部署注意
+
+- **物化引擎版本断言**：`collect-dsh.mjs` 的 `assertPnpmEngineArtifact()` 在「已物化快路径」也校验版本+入口非空。
+- **部署必须 `hdc uninstall` 先清 userData**：`ensureDshExtracted` 只在 marker 缺失时解压，`install -r` 不刷新已解压的 dsh-dist（否则继续跑旧引擎/旧 worker）。
+- **collect-runtime 必须跑**：它把 `src-main/{main.js,market-runtime.js}` 复制进 `resfile/resources/app/`；跳过会导致打包的 main.js 陈旧（`DSH_PNPM_ENGINE` 未设）。
+
+---
+
+## 15. 提交记录（Conventional Commits）
+
+| Commit | 类型 | 说明 |
+|---|---|---|
+| `8b19bce` | `docs:` | 012 规范四件套 + 201 契约化 |
+| `bac5c58` | `feat:` | 进程内 pnpm 引擎（插件 + 物化 + 接线） |
+| `094034d` | `docs:` | spike 结论回填 012 plan/tasks |
+| `d03609b` | `fix:` | 代码评审修复（reporter 冲突、配置归属、物化断言） |
+| `85dfc6c` | `fix:` | 真机三修复（pnpm@10 / execPath / symlink→copy） |
+| `a4bbe0f` | `build:` | 同步打包的 main.js / market-runtime.js 副本 |
+| `ad2607f` | `docs:` | 012 tasks 更新 |
+
+代码评审（`requesting-code-review` → `receiving-code-review`，审查者 = `flash` 子agent）：报告见 `logs/20261002-1/REVIEW_REPORT.md`；重要项（reporter 覆盖、配置被强制回盖、物化快路径绕过断言）均已修复。
+
+---
+
+## 16. 最终状态
+
+| 项 | 状态 |
+|---|---|
+| 规范 | ✅ `specs/012-pnpm-integration/`（4 文件）+ `specs/201-dsh-market/`（更新） |
+| 实现 | ✅ 插件 + 引擎物化 + profile 配置 + 契约注册 + 版本断言 |
+| 单测 | ✅ 7/7 |
+| 真机 E2E | ✅ 安装 / 卸载进程内成功，插件 live，零 symlink |
+| 上架可行性 | ✅ 零 ELF / 零 symlink / 零证书 / 零 ACL（PnP 契约路线） |
+| 未决 | TC-D06 取消专项测试；`git:` 源与依赖构建脚本插件不可装（已披露） |
+
