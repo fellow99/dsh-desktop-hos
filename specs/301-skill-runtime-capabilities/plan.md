@@ -13,7 +13,7 @@
 
 - **规范阅读面**：仓库内纯 Markdown，无构建步骤、无运行时。
 - **事实来源**：`docs/鸿蒙环境能力清单-v0.1.5.md`（921 行，权威）与 `skills/harmony-runtime-capabilities/SKILL.md`（138 行，运行期摘要）。
-- **被描述的真实运行环境**：HarmonyOS HAP（Electron-on-HarmonyOS，Electron 37 / Node 22.17.0）内的 dsh Host；设备 `3QC0226526001227` / HarmonyOS 6.1.0.135（API 24）（`docs/鸿蒙环境能力清单-v0.1.5.md:14`）。
+- **被描述的真实运行环境**：HarmonyOS HAP（Electron-on-HarmonyOS，Electron 37 / Node 22.17.0）内的 dsh Host；设备 `<设备 SN>` / HarmonyOS 6.1.0.135（API 24）（`docs/鸿蒙环境能力清单-v0.1.5.md:14`）。
 
 ### 1.2 依赖（事实来源与工具链）
 

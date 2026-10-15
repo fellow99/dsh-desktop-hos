@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| 目标设备 | `3QC0226526001227` |
+| 目标设备 | `<设备 SN>` |
 | 系统 | HarmonyOS 6.1.0.135（API 24） |
 | 应用包名 | `org.fellow99.dsh.DshDesktop` |
 | `hdc` | `D:/oh-workspace/command-line-tools/sdk/default/openharmony/toolchains/hdc.exe` |

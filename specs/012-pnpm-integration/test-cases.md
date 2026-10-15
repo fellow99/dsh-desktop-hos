@@ -4,7 +4,7 @@
 > 对应规格：[spec.md](./spec.md) ｜ 方案：[plan.md](./plan.md)
 > Last Updated: 2026-10-02
 
-> 分三类：**B** 构建期（Windows 可执行）、**U** 单元测试（裸 Node）、**D** 真机（`hdc`，设备 `3QC0226526001227`）。
+> 分三类：**B** 构建期（Windows 可执行）、**U** 单元测试（裸 Node）、**D** 真机（`hdc`，设备 `<设备 SN>`）。
 > 真机用例前置：应用已安装并启动；`DEEPSEEK_API_KEY` 已注入；市场设置页可打开。
 
 ---

@@ -66,7 +66,7 @@
 
 | 来源 | 角色 | 本规范的标注 |
 |---|---|---|
-| 设备 `3QC0226526001227`（HarmonyOS 6.1.0.135 / API 24）上的实测记录 | `process.execPath`、`node -v`、`node -e`、HNP 设备布局、`symlink`/`chmod` 行为 | `[设备实测]` + `docs/鸿蒙环境能力清单-v0.1.5.md` 行号 |
+| 设备 `<设备 SN>`（HarmonyOS 6.1.0.135 / API 24）上的实测记录 | `process.execPath`、`node -v`、`node -e`、HNP 设备布局、`symlink`/`chmod` 行为 | `[设备实测]` + `docs/鸿蒙环境能力清单-v0.1.5.md` 行号 |
 | `specs/010-tool-bash/spec.md` / `specs/201-dsh-market/spec.md` / `specs/301-skill-runtime-capabilities/spec.md` | 平台基线、市场 [NEEDS CLARIFICATION]、根因分层与安全语义 | `[已归档规范]` + `file:line` |
 | 本工程源码与其引用的第三方源码（`dsh-market/src/dsh-cli.ts`、`src-main/main.js`、`scripts/*.mjs`） | 市场内部 spawn 点、main.js 接线点、构建脚本触点 | `[源码]` + `file:line` |
 | `dsh-desktop/scripts/fetch-runtime.mjs` / `src/main/runtime.ts` | 同构问题的参考解法 | `[参考]` + `file:line` |
@@ -129,7 +129,7 @@
 
 | 项 | 值 | 出处 |
 |---|---|---|
-| 设备 / 系统 | `3QC0226526001227` / HarmonyOS 6.1.0.135（API 24） | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:14` |
+| 设备 / 系统 | `<设备 SN>` / HarmonyOS 6.1.0.135（API 24） | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:14` |
 | `deviceTypes` | `["2in1", "tablet"]` | `[源码]` `electron/src/main/module.json5:8-11` |
 | `process.platform` / `process.arch` | `openharmony` / `arm64` | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |
 | Node 版本（宿主进程） | `22.17.0`（Electron 主进程即 Node） | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |

@@ -70,7 +70,7 @@
 
 | 来源 | 角色 | 本规范的标注 |
 |---|---|---|
-| 设备 `3QC0226526001227`（HarmonyOS 6.1.0.135 / API 24）上的实测记录 | 平台行为、进程/退出/僵尸、SELinux、uid、命令可达性、围栏绕过 | `[设备实测]` |
+| 设备 `<设备 SN>`（HarmonyOS 6.1.0.135 / API 24）上的实测记录 | 平台行为、进程/退出/僵尸、SELinux、uid、命令可达性、围栏绕过 | `[设备实测]` |
 | 本工程源码与其引用的上游 dsh 源码 | 禁用链、配置文件、行号、preset 表、构建脚本 | `[源码]` + `file:line` |
 | OpenHarmony 上游仓库 / 构建文件 / 官方文档（`third_party_toybox`、`TOYBOX_VERSION "0.8.12"`、`BUILD.gn`、`third_party_mksh/BUILD.gn:147`、`toybox.gni:31-35`、`cl.filemanagement.2`、SDK 4.1.5.2） | 命令清单、编译标志、sh 的真实构建来源、第三方应用受限项 | `[上游]` + 文件/条目名 |
 | 本规范的**设计决策**（协议格式、默认值、围栏算法、配置项） | 由本模块自行确定、可被评审 | `[设计]` |
@@ -132,7 +132,7 @@
 
 | 项 | 值 | 出处 |
 |---|---|---|
-| 设备 / 系统 | `3QC0226526001227` / HarmonyOS 6.1.0.135（API 24） | `[设备实测]`，与 `specs/301-skill-runtime-capabilities/spec.md:84-85` 同一设备 |
+| 设备 / 系统 | `<设备 SN>` / HarmonyOS 6.1.0.135（API 24） | `[设备实测]`，与 `specs/301-skill-runtime-capabilities/spec.md:84-85` 同一设备 |
 | `process.platform` | `openharmony` | `[设备实测]` |
 | `process.arch` | `arm64` | `[设备实测]` |
 | Node 版本 | `22.17.0` | `[设备实测]` |
@@ -301,7 +301,7 @@ Exit code: <rc>
 
 **FR-4.6（`/system/bin/sh` 身份 —— **已于真机裁定：mksh R59**）** 本项曾为"两说矛盾、不猜"状态：设备记录称 `readlink /proc/self/exe` 解析为 toybox，而 OpenHarmony 源码显示 `/system/bin/sh` 由 `third_party_mksh/BUILD.gn:147` 以 `ohos_executable("sh")` 从 **mksh R59c** 构建、toybox 的 `sh.c` 未编译。
 
-**2026-09-22 真机裁定（设备 `3QC0226526001227`，见 `logs/20260922-1/TEST_REPORT.md` §E）**：`/system/bin/sh` **是 mksh R59（2020/10/31）**，OpenHarmony 源码正确、原设备记录错误。判定证据：
+**2026-09-22 真机裁定（设备 `<设备 SN>`，见 `logs/20260922-1/TEST_REPORT.md` §E）**：`/system/bin/sh` **是 mksh R59（2020/10/31）**，OpenHarmony 源码正确、原设备记录错误。判定证据：
 
 ```
 md5sum /system/bin/sh     = 5b5e8eb9591548a4120cdeacfa320ec2

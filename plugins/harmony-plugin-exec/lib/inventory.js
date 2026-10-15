@@ -4,7 +4,7 @@
  * Deliberately import-free so `node:test` drives it on bare Node.
  *
  * **MEASURED, not inferred.** Every list below comes from per-command probing on device
- * `3QC0226526001227` (HarmonyOS 6.1.0.135 / API 24, toybox 0.8.12) on 2026-09-22 — see
+ * `<device-sn>` (HarmonyOS 6.1.0.135 / API 24, toybox 0.8.12) on 2026-09-22 — see
  * `docs/toybox命令清单.md` and the raw evidence under `logs/20260922-1/toybox-probe/`.
  * The previous version was written from upstream inference and was WRONG: it claimed 18
  * B-class applets (measured: `nc` alone) and left the extended applets `未验证` (measured:

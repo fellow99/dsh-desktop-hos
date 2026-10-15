@@ -54,7 +54,7 @@
 ## Phase 6 — Testing（构建 + 真机）
 
 - [ ] **T6.1** 构建：`collect-runtime` → `build-dsh` → `collect-dsh` → tar → HAP
-- [ ] **T6.2** 部署到真机 `3QC0226526001227`（`hdc`）；设置 `DEEPSEEK_API_KEY`
+- [ ] **T6.2** 部署到真机 `<设备 SN>`（`hdc`）；设置 `DEEPSEEK_API_KEY`
 - [ ] **T6.3** 执行 [test-cases.md](./test-cases.md) 真机用例，产出 `TEST_REPORT.md`
 - [ ] **T6.4** 提交测试产物（`test: ...`）
 

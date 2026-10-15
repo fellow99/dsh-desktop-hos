@@ -9,7 +9,7 @@
 
 | 项 | 值 |
 |---|---|
-| 设备 | 真机（hdc target `3QC0226526001227`） |
+| 设备 | 真机（hdc target `<设备 SN>`） |
 | 系统 | HarmonyOS API 24 |
 | 调试通道 | `hdc fport tcp:19229 tcp:9229`；CDP 脚本 `logs/20261001-1/cdp.mjs` |
 | 应用 | `org.fellow99.dsh.DshDesktop`，debug 签名 HAP |

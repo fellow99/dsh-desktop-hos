@@ -1,6 +1,6 @@
 # toybox 命令清单（真机逐条实测）
 
-> **设备**：`3QC0226526001227` · HarmonyOS 6.1.0.135（API 24）· 2in1
+> **设备**：`<设备 SN>` · HarmonyOS 6.1.0.135（API 24）· 2in1
 > **实测日期**：2026-09-22 ｜ **toybox 版本**：`toybox 0.8.12`
 > **shell**：`/system/bin/sh` = **mksh R59**（`@(#)MIRBSD KSH R59 2020/10/31`）—— **不是** toysh，见 §7
 >

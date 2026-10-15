@@ -1,7 +1,7 @@
 /**
  * Unit tests for the command inventory (`lib/inventory.js`).
  *
- * The inventory is MEASURED (device `3QC0226526001227`, toybox 0.8.12, 2026-09-22) — see
+ * The inventory is MEASURED (device `<device-sn>`, toybox 0.8.12, 2026-09-22) — see
  * `docs/toybox命令清单.md`. These tests pin the measured shape so it cannot silently drift
  * back to upstream guesses. Covers spec AC-17 / FR-4.1 / FR-4.2 / FR-4.6 / FR-4.7.
  */

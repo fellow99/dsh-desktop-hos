@@ -75,7 +75,7 @@
 
 - **单元**：electron/src/test（LocalUnit.test.ets）、web_engine/src/test。
 - **自动化测试**：electron/src/ohosTest（Ability.test.ets + TestAbility）。
-- **真机验证**：Electron 37 / Node 22.17.0 真机（3QC0226526001227），覆盖「创建会话→写入事件→重启→搜索历史」主路径。
+- **真机验证**：Electron 37 / Node 22.17.0 真机（`<设备 SN>`），覆盖「创建会话→写入事件→重启→搜索历史」主路径。
 - **构建验证**：产物结构检查（better-sqlite3 package.json + .node、libc++_shared.so 存在）。
 
 ## 6. 部署策略
