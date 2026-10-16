@@ -159,17 +159,61 @@ window.__ModuleLoader__.load({
         ? 'unknown'
         : info.configured ? (info.writable ? 'configured' : 'readonly') : 'absent'
       return h('div', { className: 'git-cred-row' }, [
-        h('div', { className: 'git-cred-main', key: 'main' }, [
+        h('div', { className: 'git-cred-id', key: 'id' }, [
           h('div', { className: 'git-cred-host', key: 'host' }, host),
-          h('code', { className: 'git-cred-ref', key: 'ref' }, ref),
+          h('code', { className: 'git-cred-ref', key: 'ref', title: ref }, ref),
         ]),
+        h('span', { className: `git-cred-state ${state}`, key: 'state' }, t(`state.${state}`)),
         h('div', { className: 'git-cred-actions', key: 'actions' }, [
-          h('span', { className: `git-cred-state git-cred-state-${state}`, key: 'state' }, t(`state.${state}`)),
-          h('button', { type: 'button', key: 'update', disabled: busy, onClick: () => onUpdate(host) }, t('action.update')),
-          h('button', { type: 'button', key: 'remove', disabled: busy, onClick: () => onRemove(host) }, t('action.remove')),
+          h('button', { type: 'button', className: 'git-cred-btn ghost', key: 'update', disabled: busy, onClick: () => onUpdate(host) }, t('action.update')),
+          h('button', { type: 'button', className: 'git-cred-btn ghost danger', key: 'remove', disabled: busy, onClick: () => onRemove(host) }, t('action.remove')),
         ]),
       ])
     }
+
+    // The section carries its own stylesheet (the sibling workspace-picker client does the same).
+    // It borrows the shell's semantic tokens rather than hard-coding a palette — `--dsw-alias-*` is
+    // the app's own layer, so the page follows the theme — and keeps a literal fallback on every
+    // use, so a renamed token degrades to a readable page instead of an unstyled one.
+    const stylesheet = [
+      '.git-cred{display:flex;flex-direction:column;gap:14px;font-size:14px;color:var(--dsw-alias-label-primary,#0f1115)}',
+      '.git-cred-head{display:flex;flex-direction:column;gap:4px}',
+      '.git-cred-title{margin:0;font-size:15px;font-weight:600;line-height:1.4}',
+      '.git-cred-lead{margin:0;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,#61666b)}',
+      '.git-cred-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '.git-cred-input{box-sizing:border-box;height:36px;padding:0 12px;font-size:14px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#0000001a);border-radius:var(--dsw-radius-sm,8px);outline:none}',
+      '.git-cred-input::placeholder{color:var(--dsw-alias-label-caption,#9aa0a6)}',
+      '.git-cred-input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}',
+      '.git-cred-input:disabled{opacity:.6}',
+      '.git-cred-input.is-host{flex:1 1 240px;min-width:180px}',
+      '.git-cred-input.is-user{flex:0 1 150px}',
+      '.git-cred-input.is-pass{flex:0 1 150px}',
+      '.git-cred-btn{height:36px;padding:0 16px;font-size:14px;border:1px solid transparent;border-radius:var(--dsw-radius-sm,8px);cursor:pointer;white-space:nowrap}',
+      '.git-cred-btn:disabled{opacity:.5;cursor:not-allowed}',
+      '.git-cred-btn.primary{background:var(--dsw-alias-button-primary-fill,#0f1115);color:var(--dsw-alias-label-primary-inverted,#fff)}',
+      '.git-cred-btn.primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,#3a3a3a)}',
+      '.git-cred-btn.ghost{height:28px;padding:0 10px;font-size:13px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);border-color:var(--dsw-alias-border-l2,#0000001a)}',
+      '.git-cred-btn.ghost:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#2631480f)}',
+      '.git-cred-btn.ghost.danger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger,#ec13130d);color:var(--dsw-alias-state-error-label,#d92d20);border-color:transparent}',
+      '.git-cred-msg{margin:0;font-size:13px}',
+      '.git-cred-msg.ok{color:var(--dsw-alias-label-secondary,#61666b)}',
+      '.git-cred-msg.error{color:var(--dsw-alias-state-error-label,#d92d20)}',
+      '.git-cred-list{display:flex;flex-direction:column;gap:8px}',
+      '.git-cred-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1,#0000000a);border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-settings-card-fill,var(--dsw-alias-bg-layer-2,#fff))}',
+      '.git-cred-id{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}',
+      '.git-cred-host{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.git-cred-ref{font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:11px;color:var(--dsw-alias-label-caption,#9aa0a6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.git-cred-state{flex:0 0 auto;padding:2px 8px;font-size:12px;border-radius:999px;color:var(--dsw-alias-label-tertiary,#81858c);background:var(--dsw-alias-interactive-bg-hover,#2631480f)}',
+      '.git-cred-state.configured{color:var(--dsw-alias-brand-primary,#0f1115)}',
+      '.git-cred-actions{display:flex;gap:6px;flex:0 0 auto}',
+      '.git-cred-empty{margin:0;font-size:13px;color:var(--dsw-alias-label-caption,#9aa0a6)}',
+      '.git-cred-foot{margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-caption,#9aa0a6)}',
+    ].join('\n')
+
+    const styleTag = document.createElement('style')
+    styleTag.dataset.plugin = 'harmony-plugin-git'
+    styleTag.textContent = stylesheet
+    document.head.append(styleTag)
 
     /**
      * The settings section. Everything it renders is derived from `describe()` plus the local host
@@ -254,34 +298,43 @@ window.__ModuleLoader__.load({
         }
       }, [hosts, refresh, set, t])
 
-      return h('section', { className: 'git-cred-section' }, [
-        h('h2', { key: 'title' }, t('title')),
-        h('p', { className: 'git-cred-hint', key: 'hint' }, t('hint')),
-        h('p', { className: 'git-cred-hint', key: 'format' }, t('format')),
+      return h('section', { className: 'git-cred' }, [
+        h('div', { className: 'git-cred-head', key: 'head' }, [
+          h('h2', { className: 'git-cred-title', key: 'title' }, t('title')),
+          h('p', { className: 'git-cred-lead', key: 'lead' }, t('lead')),
+        ]),
         h('div', { className: 'git-cred-form', key: 'form' }, [
           h('input', {
-            key: 'host', placeholder: t('field.host'), value: form.host, disabled: busy,
+            key: 'host', className: 'git-cred-input is-host', placeholder: t('field.host'), value: form.host, disabled: busy,
             onChange: event => setForm({ ...form, host: event.target.value }),
           }),
           h('input', {
-            key: 'user', placeholder: t('field.username'), value: form.username, disabled: busy,
+            key: 'user', className: 'git-cred-input is-user', placeholder: t('field.username'), value: form.username, disabled: busy,
             onChange: event => setForm({ ...form, username: event.target.value }),
           }),
           h('input', {
-            key: 'pass', type: 'password', placeholder: t('field.password'), value: form.password, disabled: busy,
+            key: 'pass', className: 'git-cred-input is-pass', type: 'password', placeholder: t('field.password'), value: form.password, disabled: busy,
             onChange: event => setForm({ ...form, password: event.target.value }),
+            // Enter saves, the way the other forms in this shell behave.
+            onKeyDown: event => {
+              if (event.key !== 'Enter' || busy) return
+              void (async () => {
+                await save(form.host, form.username, form.password)
+                setForm({ host: '', username: '', password: '' })
+              })()
+            },
           }),
           h('button', {
-            key: 'save', type: 'button', disabled: busy,
+            key: 'save', className: 'git-cred-btn primary', type: 'button', disabled: busy,
             onClick: async () => {
               await save(form.host, form.username, form.password)
               setForm({ host: '', username: '', password: '' })
             },
           }, t('action.save')),
         ]),
-        message === null ? null : h('p', { className: `git-cred-msg git-cred-${message.kind}`, key: 'msg' }, message.text),
+        message === null ? null : h('p', { className: `git-cred-msg ${message.kind}`, key: 'msg' }, message.text),
         hosts.length === 0
-          ? h('p', { className: 'git-cred-hint', key: 'empty' }, t('empty'))
+          ? h('p', { className: 'git-cred-empty', key: 'empty' }, t('empty'))
           : h('div', { className: 'git-cred-list', key: 'list' }, hosts.map(host => h(HostRow, {
             key: host,
             host,
@@ -306,7 +359,7 @@ window.__ModuleLoader__.load({
             },
             onUpdate: (target) => setForm({ host: target, username: '', password: '' }),
           }))),
-        h('p', { className: 'git-cred-limit', key: 'limit' }, t('limit')),
+        h('p', { className: 'git-cred-foot', key: 'warn' }, t('warn')),
       ])
     }
 
@@ -320,9 +373,8 @@ window.__ModuleLoader__.load({
             ['zh', {
               'nav': 'Git 凭据',
               'title': 'Git 凭据',
-              'hint': '带账号的 Git 远端在需要认证时会读取这里保存的用户名与密码。明文只保存在本机凭据库中，不会写入配置、对话或日志。',
-              'format': '存储名由主机名推导：host[:port] 大写、非字母数字替换为 _，例如 git.example.com:8443 → GIT_CREDENTIAL_GIT_EXAMPLE_COM_8443；值为「用户名:密码」（按第一个冒号切分）。',
-              'field.host': '主机（如 git.example.com:8443）',
+              'lead': '需要认证的远端所用的用户名与密码；只保存在本机凭据库。',
+              'field.host': '主机，例如 git.example.com:8443',
               'field.username': '用户名',
               'field.password': '密码',
               'action.save': '保存',
@@ -334,17 +386,16 @@ window.__ModuleLoader__.load({
               'state.unknown': '状态未知',
               'saved': '已保存。',
               'removed': '已删除。',
-              'empty': '还没有记录任何主机。填入主机、用户名与密码后保存即可。',
+              'empty': '还没有保存任何主机。',
               'error.incomplete': '请填写主机、用户名与密码。',
               'error.describe': '读取凭据状态失败：',
-              'limit': '注意：凭据接口不提供枚举能力，因此直接写入 .credentials.yaml 的主机不会自动出现在此列表。另外，明文 http:// 远端会让凭据以 Base64 明文过网，生产环境请使用 https://。',
+              'warn': '明文 http:// 远端会以 Base64 传输该凭据，生产环境请使用 https://。',
             }],
             ['en', {
               'nav': 'Git credentials',
               'title': 'Git credentials',
-              'hint': 'Authenticated Git remotes read the username and password stored here. The cleartext lives only in the local credential store — never in configuration, conversations or logs.',
-              'format': 'The stored name is derived from the host: host[:port] upper-cased with non-alphanumerics replaced by _, e.g. git.example.com:8443 → GIT_CREDENTIAL_GIT_EXAMPLE_COM_8443. The value is "username:password", split on the first colon.',
-              'field.host': 'Host (e.g. git.example.com:8443)',
+              'lead': 'Username and password for remotes that require authentication; stored only in this machine\u2019s credential store.',
+              'field.host': 'Host, e.g. git.example.com:8443',
               'field.username': 'Username',
               'field.password': 'Password',
               'action.save': 'Save',
@@ -356,10 +407,10 @@ window.__ModuleLoader__.load({
               'state.unknown': 'Unknown',
               'saved': 'Saved.',
               'removed': 'Removed.',
-              'empty': 'No host recorded yet. Enter a host, username and password, then save.',
+              'empty': 'No host saved yet.',
               'error.incomplete': 'Host, username and password are all required.',
               'error.describe': 'Could not read credential status: ',
-              'limit': 'Note: the credential API cannot enumerate references, so hosts written directly into .credentials.yaml do not appear here. Also, a plaintext http:// remote sends the credential as Base64 in the clear — use https:// in production.',
+              'warn': 'A plaintext http:// remote sends this credential as Base64 \u2014 use https:// in production.',
             }],
           ]
           try {
