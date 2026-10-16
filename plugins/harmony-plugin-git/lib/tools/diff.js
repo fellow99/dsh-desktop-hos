@@ -118,11 +118,15 @@ export function applyGitDiffTool(ctx, deps) {
       },
       ref: {
         type: 'string',
-        description: 'Base ref for `mode: "refs"`. Defaults to "HEAD" when omitted; ignored by the other modes.',
+        description: 'Base ref for `mode: "refs"` (which also needs ref2). Omit it with the other modes: '
+          + 'they pin their own base, and passing it there is reported as an error instead of being '
+          + 'dropped silently. Ancestry syntax (`HEAD~1`) is not implemented by the git library in this '
+          + 'deployment — pass a branch, a tag, "HEAD", or an object id.',
       },
       ref2: {
         type: 'string',
-        description: 'Target ref for `mode: "refs"`. Required for that mode; ignored by the other modes.',
+        description: 'Target ref for `mode: "refs"` (required there). Omit it with the other modes: they '
+          + 'pin their own target, and passing it there is reported as an error instead of being dropped.',
       },
       paths: {
         type: 'array',
@@ -193,6 +197,18 @@ export function applyGitDiffTool(ctx, deps) {
         policy = opened.policy
         const { git } = await loadGit()
         const mode = args.mode ?? 'head'
+        // `ref`/`ref2` name the base and target of the "refs" comparison only: the other three modes
+        // pin those themselves. Dropping them silently is what made a device run report "no changes"
+        // for `ref: "HEAD~1"` — an unsupported ancestry spelling — instead of saying so (FR-9).
+        for (const [name, value] of [['ref', args.ref], ['ref2', args.ref2]]) {
+          if (mode !== 'refs' && value !== undefined) {
+            throw new Error(
+              `git_diff: ${name} is only meaningful with mode "refs" (which needs ref and ref2); mode `
+              + `"${mode}" always compares ${mode === 'workdir' ? 'the index with the working tree'
+                : mode === 'staged' ? 'HEAD with the index' : 'HEAD with the working tree'}.`,
+            )
+          }
+        }
         const specs = Array.isArray(args.paths) ? args.paths : []
         /** The walk's trees, which of them are compared, and which of them prove tracking. */
         let plan
