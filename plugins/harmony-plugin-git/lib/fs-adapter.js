@@ -114,30 +114,50 @@ function realpathDeepest(target) {
 export function createRepositoryFs(root) {
   const at = requestPath => resolveWithin(root, requestPath)
 
+  // **Every method below is declared `async` on purpose — it is a hard contract, not a style
+  // choice.** isomorphic-git decides whether an `fs` speaks promises or callbacks by *calling
+  // `readFile()` with no arguments* and asking whether the result is promise-like
+  // (`isPromiseFs` / `isPromiseLike` in its `FileSystem`); a **synchronous** throw counts as
+  // "callbacks". Declared as plain arrows returning a promise, `readFile()` threw synchronously
+  // (`path.isAbsolute(undefined)`) the moment it was probed, so the library concluded "callback
+  // fs", wrapped all eleven commands in `pify`, and then waited for a callback nothing would ever
+  // call: every git operation hung forever while the Node event loop stayed healthy — measured on
+  // device as `git_init` never returning, with the Electron main thread blocked and the window
+  // stuck on "reconnecting". An `async` function cannot throw synchronously: it converts the bad
+  // call into a rejected promise, the probe sees a promise, and the library uses these methods
+  // directly.
   return {
     promises: {
       /** @param {string} path - path resolved by the repository root. @param {unknown} [options] - node fs options. */
-      readFile: (path, options) => nodeFs.readFile(at(path), options),
+      readFile: async (path, options) => nodeFs.readFile(at(path), options),
       /**
        * @param {string} file - destination path.
        * @param {unknown} data - bytes or text to write.
        * @param {unknown} [options] - node fs options.
        */
-      writeFile: (file, data, options) => nodeFs.writeFile(at(file), data, options),
+      writeFile: async (file, data, options) => nodeFs.writeFile(at(file), data, options),
       /** @param {string} path - path to remove. */
-      unlink: path => nodeFs.unlink(at(path)),
+      unlink: async path => nodeFs.unlink(at(path)),
       /** @param {string} path - directory to list. @param {unknown} [options] - node fs options. */
-      readdir: (path, options) => nodeFs.readdir(at(path), options),
+      readdir: async (path, options) => nodeFs.readdir(at(path), options),
       /** @param {string} path - directory to create. @param {unknown} [options] - mode or node fs options. */
-      mkdir: (path, options) => nodeFs.mkdir(at(path), options),
+      mkdir: async (path, options) => nodeFs.mkdir(at(path), options),
       /** @param {string} path - empty directory to remove. */
-      rmdir: path => nodeFs.rmdir(at(path)),
+      rmdir: async path => nodeFs.rmdir(at(path)),
       /** @param {string} path - path to stat. @param {unknown} [options] - node fs options. */
-      stat: (path, options) => nodeFs.stat(at(path), options),
+      stat: async (path, options) => nodeFs.stat(at(path), options),
       /** @param {string} path - path to lstat. @param {unknown} [options] - node fs options. */
-      lstat: (path, options) => nodeFs.lstat(at(path), options),
+      lstat: async (path, options) => nodeFs.lstat(at(path), options),
       /** @param {string} path - symlink to read. @param {unknown} [options] - node fs options. */
-      readlink: (path, options) => nodeFs.readlink(at(path), options),
+      readlink: async (path, options) => nodeFs.readlink(at(path), options),
+      /**
+       * `rm` is outside isomorphic-git's required eleven, but it is the first thing its `bindFs`
+       * looks for when it needs a recursive delete: providing the platform's own implementation
+       * avoids falling back to the library's `_readdir` + `_unlink` walk.
+       * @param {string} path - path to remove.
+       * @param {unknown} [options] - node fs options (for example `{ recursive: true }`).
+       */
+      rm: async (path, options) => nodeFs.rm(at(path), options),
       /**
        * The link itself must land inside the root; a relative target stays inside by
        * construction, while an absolute target is checked too.
@@ -145,15 +165,15 @@ export function createRepositoryFs(root) {
        * @param {string} path - link path.
        * @param {unknown} [type] - node fs symlink type.
        */
-      symlink: (target, path, type) => {
+      symlink: async (target, path, type) => {
         const linkPath = at(path)
         // A relative target is resolved against the link's own directory, so `../../..` escapes
         // exactly as an absolute target does — vet the resolved form either way.
         resolveWithin(root, isAbsolute(target) ? target : join(dirname(linkPath), target))
-        return nodeFs.symlink(target, linkPath, type)
+        return await nodeFs.symlink(target, linkPath, type)
       },
       /** @param {string} path - path whose mode to change. @param {number} mode - requested mode bits. */
-      chmod: (path, mode) => nodeFs.chmod(at(path), mode),
+      chmod: async (path, mode) => nodeFs.chmod(at(path), mode),
     },
   }
 }
