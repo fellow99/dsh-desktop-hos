@@ -180,14 +180,17 @@ window.__ModuleLoader__.load({
       '.git-cred-head{display:flex;flex-direction:column;gap:4px}',
       '.git-cred-title{margin:0;font-size:15px;font-weight:600;line-height:1.4}',
       '.git-cred-lead{margin:0;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,#61666b)}',
-      '.git-cred-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
-      '.git-cred-input{box-sizing:border-box;height:36px;padding:0 12px;font-size:14px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#0000001a);border-radius:var(--dsw-radius-sm,8px);outline:none}',
+      // One row, always: the three fields share the width (host takes twice the room of the two
+      // short ones) and the save button stays put. `nowrap` plus the small `min-width` floors mean a
+      // narrower window squeezes the fields instead of pushing the button onto a second line.
+      '.git-cred-form{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}',
+      '.git-cred-input{box-sizing:border-box;height:36px;padding:0 10px;font-size:14px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#0000001a);border-radius:var(--dsw-radius-sm,8px);outline:none}',
       '.git-cred-input::placeholder{color:var(--dsw-alias-label-caption,#9aa0a6)}',
       '.git-cred-input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}',
       '.git-cred-input:disabled{opacity:.6}',
-      '.git-cred-input.is-host{flex:1 1 240px;min-width:180px}',
-      '.git-cred-input.is-user{flex:0 1 150px}',
-      '.git-cred-input.is-pass{flex:0 1 150px}',
+      '.git-cred-input.is-host{flex:2 1 0;min-width:88px}',
+      '.git-cred-input.is-user{flex:1 1 0;min-width:64px}',
+      '.git-cred-input.is-pass{flex:1 1 0;min-width:64px}',
       '.git-cred-btn{height:36px;padding:0 16px;font-size:14px;border:1px solid transparent;border-radius:var(--dsw-radius-sm,8px);cursor:pointer;white-space:nowrap}',
       '.git-cred-btn:disabled{opacity:.5;cursor:not-allowed}',
       '.git-cred-btn.primary{background:var(--dsw-alias-button-primary-fill,#0f1115);color:var(--dsw-alias-label-primary-inverted,#fff)}',
@@ -305,7 +308,7 @@ window.__ModuleLoader__.load({
         ]),
         h('div', { className: 'git-cred-form', key: 'form' }, [
           h('input', {
-            key: 'host', className: 'git-cred-input is-host', placeholder: t('field.host'), value: form.host, disabled: busy,
+            key: 'host', className: 'git-cred-input is-host', placeholder: t('field.host'), title: t('field.host.hint'), value: form.host, disabled: busy,
             onChange: event => setForm({ ...form, host: event.target.value }),
           }),
           h('input', {
@@ -374,7 +377,8 @@ window.__ModuleLoader__.load({
               'nav': 'Git 凭据',
               'title': 'Git 凭据',
               'lead': '需要认证的远端所用的凭据；保存在 ~/.dsh/.git-credentials（git 原生格式，可手工编辑）。',
-              'field.host': '主机，例如 git.example.com:8443',
+              'field.host': '主机名:端口',
+              'field.host.hint': '例如 git.example.com:8443',
               'field.username': '用户名',
               'field.password': '密码',
               'action.save': '保存',
@@ -395,7 +399,8 @@ window.__ModuleLoader__.load({
               'nav': 'Git credentials',
               'title': 'Git credentials',
               'lead': 'Credentials for authenticated remotes; stored in ~/.dsh/.git-credentials in git\u2019s own format, so they can be edited or copied by hand.',
-              'field.host': 'Host, e.g. git.example.com:8443',
+              'field.host': 'host:port',
+              'field.host.hint': 'e.g. git.example.com:8443',
               'field.username': 'Username',
               'field.password': 'Password',
               'action.save': 'Save',
