@@ -127,6 +127,28 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Unwrap a remote envelope before indexing it.
+     *
+     * A settings page is not entitled to assume it receives the raw business value: on device
+     * `credentials.describe` answered `{ ok: true, value: {...} }`, and the page indexed the
+     * envelope, which is exactly why every row read 状态未知 while the credential was stored. An
+     * `{ ok: false }` answer is re-thrown so the page reports the failure the store actually
+     * returned instead of inventing a state.
+     *
+     * @param answer - whatever the remote call resolved to.
+     * @returns the business value, or the input unchanged when it is not an envelope.
+     */
+    function unwrapEnvelope(answer) {
+      if (!answer || typeof answer !== 'object' || Array.isArray(answer) || answer instanceof Map) return answer
+      if (!('ok' in answer) && !('value' in answer)) return answer
+      if (answer.ok === false) {
+        const detail = answer.error && answer.error.message ? answer.error.message : (answer.error ?? 'unknown error')
+        throw new Error(String(detail))
+      }
+      return 'value' in answer ? answer.value : answer
+    }
+
+    /**
      * One configured-host row: reference name, live status, and the two write actions.
      * @param props - row props assembled by the page.
      */
@@ -178,7 +200,10 @@ window.__ModuleLoader__.load({
         }
         const refs = list.map(refForHost)
         try {
-          const answer = await describe(refs)
+          // The remote layer hands back its own envelope, not the business value: on device the
+          // answer was `{ ok, value }`, and this page indexed the envelope instead of the record
+          // inside it, so every row read 状态未知.
+          const answer = unwrapEnvelope(await describe(refs))
           const indexed = indexByRef(answer, refs)
           setInfo(indexed)
           const unmatched = refs.filter(ref => indexed[ref] === undefined)
