@@ -37,6 +37,14 @@ const PNPM_VERSION = '10.34.6';
  */
 const DSH_MARKET_VERSION = '1.66.7';
 
+/**
+ * Pinned isomorphic-git version — materialized into the plugin's own nested node_modules by
+ * `collectGitRuntime()`. jsdiff is deliberately **not** pinned here: it is reused from the host
+ * closure (dsh declares `diff ^9.0.0`), guarded by a major-version assertion in the plugin's
+ * `lib/runtime.js`.
+ */
+const ISOMORPHIC_GIT_VERSION = '1.44.2';
+
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);
   execSync(cmd, { cwd, stdio: 'inherit' });
@@ -847,6 +855,97 @@ function collectMarketPNPM() {
   }
 }
 
+/**
+ * 物化 git 运行时（需求 204）：isomorphic-git 及其整棵依赖闭包。
+ *
+ * **只物化 isomorphic-git** —— jsdiff 复用宿主闭包：`diff@^9.0.0` 本就是 dsh 自己的依赖
+ * （`fs/tool-fs`、`deliverables/workspace-changes`、`client/ui-trajectory`、`client/ui-primitives`
+ * 均声明），且 dsh `app-boot` 的 profile resolution 会把 profile 包的裸名请求路由到宿主闭包。
+ * 真机实测：从插件自身目录解析 `diff` 命中 `<userData>/dsh-dist/node_modules/diff@9.0.0`，
+ * 其 ESM 入口导出 `createTwoFilesPatch`、`structuredPatch` 且输出符合预期。故这里**不再**重复
+ * 分发一份 jsdiff —— 那会多出约 800 KB，并与宿主同名包形成遮蔽风险。
+ * （插件侧仍以 peerDependencies 声明 `diff`，并以 major 断言守住这个复用。）
+ *
+ * **落位**：整棵闭包嵌套在 `dsh-dist/node_modules/isomorphic-git/node_modules/`，绝不落顶层。
+ * 依据是实测事实：顶层已有 dsh 自己的 `pako@0.2.9`、`ignore@5.3.2`、`diff@9.0.0`，而
+ * isomorphic-git 需要它自己那份（更新的）`pako`/`ignore`；嵌套后 Node 的「最近优先」解析
+ * 保证双方各用各的，互不覆盖。dsh 的 profile resolution 会把 `isomorphic-git` 这个裸名请求
+ * 路由到宿主闭包，因此顶层落位不是解析所必需的 —— 嵌套纯为隔离。
+ *
+ * 版本 pin 为常量（对齐 DSH_MARKET_VERSION / PNPM_VERSION 先例）；幂等：目标已在且版本相符即跳过。
+ * 缺入口或版本不符一律硬失败，避免把半成品打进包。
+ */
+function collectGitRuntime() {
+  const pluginDest = resolve(distDir, 'node_modules', 'harmony-plugin-git');
+  const nested = resolve(pluginDest, 'node_modules');
+
+  if (existsSync(resolve(nested, 'isomorphic-git', 'package.json'))) {
+    assertGitRuntimeArtifact(nested);
+    console.log('[collect-dsh] git 运行时已物化');
+    return;
+  }
+  if (!existsSync(resolve(pluginDest, 'package.json'))) {
+    console.error(`[collect-dsh] 插件目录缺失，无法物化 git 运行时: ${pluginDest}`);
+    process.exit(1);
+  }
+
+  const staging = resolve(projectRoot, '.git-runtime-staging');
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  writeFileSync(resolve(staging, 'package.json'),
+    JSON.stringify({ name: 'git-runtime-staging', version: '0.0.0', private: true }, null, 2) + '\n');
+  try {
+    run(`pnpm add isomorphic-git@${ISOMORPHIC_GIT_VERSION} --config.node-linker=hoisted --ignore-scripts`, staging);
+    const srcNm = resolve(staging, 'node_modules');
+    if (!existsSync(resolve(srcNm, 'isomorphic-git', 'package.json'))) {
+      console.error('[collect-dsh] git 运行时物化失败（isomorphic-git 未落地）');
+      process.exit(1);
+    }
+    rmSync(nested, { recursive: true, force: true });
+    mkdirSync(nested, { recursive: true });
+    // hoisted staging 已是扁平结构，整目录搬运；跳过 pnpm 自身的簿记条目。
+    for (const entry of readdirSync(srcNm)) {
+      if (entry === '.bin' || entry === '.pnpm' || entry === '.modules.yaml' || entry === 'package.json') continue;
+      cpSync(resolve(srcNm, entry), resolve(nested, entry), { recursive: true, dereference: true });
+    }
+    assertGitRuntimeArtifact(nested);
+    console.log(`[collect-dsh] git 运行时已物化 (isomorphic-git@${ISOMORPHIC_GIT_VERSION}，闭包 ${readdirSync(nested).length} 个包，嵌套于插件内)`);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 断言 git 运行时载体就位：版本与 pin 一致，且 ESM 入口与 Node HTTP 客户端存在且非空。
+ * 任一不满足即硬失败 —— 这两种缺陷都只会在运行期第一次调用工具时暴露。
+ */
+function assertGitRuntimeArtifact(nested) {
+  const pkgPath = resolve(nested, 'isomorphic-git', 'package.json');
+  if (!existsSync(pkgPath)) {
+    console.error(`[collect-dsh] git 运行时缺 isomorphic-git 包清单: ${pkgPath}`);
+    process.exit(1);
+  }
+  let actual;
+  try {
+    actual = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+  } catch (err) {
+    console.error(`[collect-dsh] isomorphic-git 包清单不可解析: ${err.message}`);
+    process.exit(1);
+  }
+  if (actual !== ISOMORPHIC_GIT_VERSION) {
+    console.error(`[collect-dsh] isomorphic-git 版本不符: 期望 ${ISOMORPHIC_GIT_VERSION}，实际 ${actual}`);
+    process.exit(1);
+  }
+  for (const rel of ['isomorphic-git/index.js', 'isomorphic-git/http/node/index.js']) {
+    const entry = resolve(nested, rel);
+    let size = 0;
+    try { size = statSync(entry).size; } catch { /* 缺失按 0 处理 */ }
+    if (!(size > 0)) {
+      console.error(`[collect-dsh] git 运行时入口缺失或为空: ${entry}`);
+      process.exit(1);
+    }
+  }
+}
 // 0. 校验
 if (!existsSync(dshRoot)) {
   console.error(`[collect-dsh] dsh 未找到: ${dshRoot}`);
@@ -936,5 +1035,9 @@ collectPlugins();
 
 // 10b. 物化纯 JS pnpm 引擎（spec 012）：dsh-dist/node_modules/pnpm（进程内安装引擎）。
 collectMarketPNPM();
+
+// 10c. 物化 git 运行时（需求 204）：isomorphic-git 及其整棵依赖闭包，嵌套在插件自己的
+//      node_modules 下；jsdiff 复用宿主闭包，不再重复发一份（理由见 collectGitRuntime 注释）。
+collectGitRuntime();
 
 console.log(`\n[collect-dsh] 完成: ${distDir}`);

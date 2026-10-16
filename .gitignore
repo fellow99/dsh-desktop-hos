@@ -39,3 +39,7 @@ signing.release.local.json
 
 # 阶段日志与证据（构建日志、截图、报告）— 入库策略同 desktop，不入库
 /logs/
+
+# 构建期依赖物化的临时暂存目录（脚本正常结束时删除；中断时会残留，故不入库）
+/.pnpm-engine-staging/
+/.git-runtime-staging/

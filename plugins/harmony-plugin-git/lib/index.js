@@ -1,80 +1,100 @@
 /**
- * R2 PoC 骨架 —— **不是最终实现**，仅为验证装配面的两个前提：
- *   ① host 平面一行 `- insert:` 能否让本插件的 host 面激活；
- *   ② host 平面注册的工具能否被 agent（会话）看见与调用。
+ * Host half of `harmony-plugin-git`: the model-facing git tool family.
  *
- * PoC 期临时把 `ctx` 与注册结果挂到 `globalThis.__gitPoc`，供 `--inspect` 只读查询；
- * **正式实现必须删除该挂钩**（见 docs/204-插件-GIT.md §19 R2）。
+ * Scope of this file is **assembly only** — it constructs the two collaborators every tool
+ * shares and hands them to each tool's own registration function:
  *
- * 关键约束（已实测）：`ctx.tools.register()` 会跑 `assertSupportedJsonSchema`，它**不接受**
- * dsh 在 `defineTool` 参数/输出写法里的 `required: true` 简写 —— 必须经 `defineTool` 翻译。
- * 裸写 schema 会抛 `unsupported JSON schema: …required is not supported on type "string"`。
+ * - `GitRepositoryFence` — resolves and vets the repository root once per call, and carries the
+ *   sandbox-escalation ladder for repositories outside the session workspace.
+ * - `GitCredentials` — resolves HTTP credentials from the credential store, so no tool parameter
+ *   ever carries a secret.
  *
- * 命名导出必填：default export 会让 Loader 丢弃 `inject`。
+ * `inject` names only services this file itself needs. `credentials` and `sandboxPolicy` are read
+ * through `ctx.get(...)` instead, deliberately: a host-plane row that injects a service which
+ * never appears stays pending forever, and that failure mode takes the whole plugin tree down
+ * (see `profiles/desktop/cordis.patch.yml` for the same reasoning applied to `open-in-app`).
+ *
+ * Named exports only — a default export makes the Loader discard `inject`.
+ *
  * @module harmony-plugin-git
  */
 
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { Config } from './config.js'
+import { GitCredentials } from './auth.js'
+import { GitRepositoryFence } from './fence.js'
+import { applyGitInitTool } from './tools/init.js'
+import { applyGitCloneTool } from './tools/clone.js'
+import { applyGitStatusTool } from './tools/status.js'
+import { applyGitDiffTool } from './tools/diff.js'
+import { applyGitLogTool } from './tools/log.js'
+import { applyGitShowTool } from './tools/show.js'
+import { applyGitAddTool } from './tools/add.js'
+import { applyGitCommitTool } from './tools/commit.js'
+import { applyGitBranchTool } from './tools/branch.js'
+import { applyGitCheckoutTool } from './tools/checkout.js'
+import { applyGitResetTool } from './tools/reset.js'
+import { applyGitMergeTool } from './tools/merge.js'
+import { applyGitCherryPickTool } from './tools/cherry-pick.js'
+import { applyGitRevertTool } from './tools/revert.js'
+import { applyGitStashTool } from './tools/stash.js'
+import { applyGitTagTool } from './tools/tag.js'
+import { applyGitRemoteTool } from './tools/remote.js'
+import { applyGitFetchTool } from './tools/fetch.js'
+import { applyGitPullTool } from './tools/pull.js'
+import { applyGitPushTool } from './tools/push.js'
+import { applyGitConfigTool } from './tools/config.js'
 
 /** Plugin name used by loader diagnostics and the profile row. */
 export const name = 'harmony-plugin-git'
 
-/** Services required before anything registers. */
-export const inject = ['tools']
+/** Services required before any tool registers. */
+export const inject = ['tools', 'fs']
 
-/** Marker used by the PoC tool result so the device log is unambiguous. */
-const POC_MARKER = 'harmony-plugin-git/poc'
+export { Config }
 
 /**
- * Register the R2 PoC tool and publish a diagnostic handle that records the outcome.
- * @param ctx - the plugin context; registrations are effects scoped to it.
+ * Every registration function in the family, in tool-name order. A list rather than a long run
+ * of statements so the count is checkable in one place — the device test asserts the tool table
+ * grew by exactly this many entries.
+ * @type {readonly ((ctx: object, deps: object) => void)[]}
  */
-export function apply(ctx) {
-  const status = { registered: false, error: null }
+export const TOOL_REGISTRARS = [
+  applyGitInitTool,
+  applyGitCloneTool,
+  applyGitStatusTool,
+  applyGitDiffTool,
+  applyGitLogTool,
+  applyGitShowTool,
+  applyGitAddTool,
+  applyGitCommitTool,
+  applyGitBranchTool,
+  applyGitCheckoutTool,
+  applyGitResetTool,
+  applyGitMergeTool,
+  applyGitCherryPickTool,
+  applyGitRevertTool,
+  applyGitStashTool,
+  applyGitTagTool,
+  applyGitRemoteTool,
+  applyGitFetchTool,
+  applyGitPullTool,
+  applyGitPushTool,
+  applyGitConfigTool,
+]
 
-  try {
-    ctx.tools.register(defineTool({
-      name: 'git_poc_probe',
-      description: 'R2 assembly probe for the git plugin. Takes no parameters and returns the '
-        + 'plugin marker plus host runtime versions. Its only purpose is to prove that a plugin '
-        + 'mounted on the host plane can register a tool the agent can see and call.',
-      parameters: {},
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            marker: { type: 'string', required: true },
-            node: { type: 'string', required: true },
-            electron: { type: 'string', required: true },
-            toolCount: { type: 'number', required: true },
-          },
-        },
-        render: (_args, value) => [{
-          type: 'text',
-          text: `${value.marker}: ok (node ${value.node}, electron ${value.electron}, `
-            + `${value.toolCount} tools registered)`,
-        }],
-      },
-      execute() {
-        return {
-          marker: POC_MARKER,
-          node: process.versions.node,
-          electron: process.versions.electron ?? 'n/a',
-          toolCount: ctx.tools.schemas().length,
-        }
-      },
-    }))
-    status.registered = true
-  } catch (error) {
-    status.error = error instanceof Error ? error.message : String(error)
-  }
+/**
+ * Register the whole git tool family.
+ * @param ctx - the plugin context; registrations are effects scoped to it.
+ * @param config - the resolved plugin config (schemastery filled every default).
+ */
+export function apply(ctx, config) {
+  const fence = new GitRepositoryFence(ctx)
+  const credentials = new GitCredentials(ctx)
+  const deps = { fence, credentials, config }
 
-  // PoC-only diagnostic handle for `--inspect`. Never ship this.
-  globalThis.__gitPoc = {
-    plugin: name,
-    attachedAt: new Date().toISOString(),
-    status,
-    ctx,
-  }
+  for (const register of TOOL_REGISTRARS) register(ctx, deps)
+
+  // The run-time self-report channel: the inspector cannot reach `ctx` (no host handle is
+  // published), so this line in hilog is what proves the row activated on a device.
+  console.log(`[dsh-harmony] harmony-plugin-git: registered ${TOOL_REGISTRARS.length} tools`)
 }

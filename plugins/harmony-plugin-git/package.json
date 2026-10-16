@@ -2,11 +2,12 @@
   "name": "harmony-plugin-git",
   "version": "0.1.0",
   "private": true,
-  "description": "DSH harmony wrapper plugin: model-facing git tools backed by the pure-JS isomorphic-git implementation, with a repo-root chroot filesystem adapter, sandbox-escalation fencing, and a credential-store-backed settings page",
+  "description": "DSH plugin: the model-facing git tool family backed by the pure-JS isomorphic-git implementation, with a repository-root chroot filesystem adapter, sandbox-escalation fencing for repositories outside the session workspace, credential-store-backed HTTP auth, and a Git credentials settings page",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": "./lib/index.js"
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
   },
   "files": [
     "lib",
@@ -14,7 +15,22 @@
     "README_zh.md"
   ],
   "peerDependencies": {
+    "diff": "^9.0.0",
     "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-tools": "*"
+    "@deepseek-ai/dsh-credentials": "*",
+    "@deepseek-ai/dsh-fs": "*",
+    "@deepseek-ai/dsh-sandbox": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
   }
 }
