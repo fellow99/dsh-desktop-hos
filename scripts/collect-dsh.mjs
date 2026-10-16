@@ -866,7 +866,11 @@ function collectMarketPNPM() {
  * 分发一份 jsdiff —— 那会多出约 800 KB，并与宿主同名包形成遮蔽风险。
  * （插件侧仍以 peerDependencies 声明 `diff`，并以 major 断言守住这个复用。）
  *
- * **落位**：整棵闭包嵌套在 `dsh-dist/node_modules/isomorphic-git/node_modules/`，绝不落顶层。
+ * **落位**：isomorphic-git 的整棵闭包嵌套在**插件自己**的 `node_modules/` 下
+ * （`dsh-dist/node_modules/harmony-plugin-git/node_modules/`），绝不落顶层，也不落
+ * `dsh-dist/node_modules/isomorphic-git/node_modules/` —— 后者不会被 main.js 的
+ * `ensureDshPluginsProfileLink()` 一起复制到 `$DSH_HOME/profiles/node_modules/`（它只整目录
+ * 复制 `harmony-plugin-*`），插件在设备上就解析不到自己那一份闭包。
  * 依据是实测事实：顶层已有 dsh 自己的 `pako@0.2.9`、`ignore@5.3.2`、`diff@9.0.0`，而
  * isomorphic-git 需要它自己那份（更新的）`pako`/`ignore`；嵌套后 Node 的「最近优先」解析
  * 保证双方各用各的，互不覆盖。dsh 的 profile resolution 会把 `isomorphic-git` 这个裸名请求
@@ -903,13 +907,18 @@ function collectGitRuntime() {
     }
     rmSync(nested, { recursive: true, force: true });
     mkdirSync(nested, { recursive: true });
-    // hoisted staging 已是扁平结构，整目录搬运；跳过 pnpm 自身的簿记条目。
+    // hoisted staging 已是扁平结构，整目录搬运。跳过 pnpm 自身的簿记条目：`.pnpm`（内容寻址
+    // 目录）、`.bin`（可执行垫片）、`.modules.yaml` 与 `.pnpm-workspace-state-v1.json`（安装期
+    // 的工作区状态）都是安装期的账本而非运行时依赖，随包发出去只会变成将来的诊断噪音；staging
+    // 根清单 `package.json` 同理（插件自己的清单已经在上一层）。判据取「点号开头 + package.json」，
+    // 这样 pnpm 以后新增别的账本文件也自动跳过。
     for (const entry of readdirSync(srcNm)) {
-      if (entry === '.bin' || entry === '.pnpm' || entry === '.modules.yaml' || entry === 'package.json') continue;
+      if (entry.startsWith('.') || entry === 'package.json') continue;
       cpSync(resolve(srcNm, entry), resolve(nested, entry), { recursive: true, dereference: true });
     }
     assertGitRuntimeArtifact(nested);
-    console.log(`[collect-dsh] git 运行时已物化 (isomorphic-git@${ISOMORPHIC_GIT_VERSION}，闭包 ${readdirSync(nested).length} 个包，嵌套于插件内)`);
+    const packages = readdirSync(nested).filter(entry => !entry.startsWith('.')).length;
+    console.log(`[collect-dsh] git 运行时已物化 (isomorphic-git@${ISOMORPHIC_GIT_VERSION}，闭包 ${packages} 个包，嵌套于插件内)`);
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }

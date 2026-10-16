@@ -1,9 +1,11 @@
 /**
- * Lazy loader for the two vendored third-party runtimes: `isomorphic-git` (the pure-JS git
- * implementation) and `diff` (jsdiff, used to render unified diffs).
+ * Lazy loader for the plugin's two third-party runtimes: `isomorphic-git` (the pure-JS git
+ * implementation, materialized into the plugin's **own** `node_modules/` by `collectGitRuntime()`)
+ * and `diff` (jsdiff, used to render unified diffs — **not** shipped here: it comes from the host
+ * dependency closure).
  *
- * Both are materialized into `dsh-dist` by `collectGitRuntime()` and resolved by Node from
- * `node_modules` as usual. Loading is deliberately **lazy and on first use**: a missing or
+ * Both are resolved by Node from `node_modules` as usual. Loading is deliberately **lazy and on
+ * first use**: a missing or
  * broken dependency must surface as a clear per-call error, never as a boot-time failure of
  * the whole host plugin tree (a host-plane row that throws during `apply()` leaves no
  * `__hostError` trace and is very hard to attribute — see `docs/204-插件-GIT.md` F11).
