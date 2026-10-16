@@ -43,3 +43,6 @@ signing.release.local.json
 # 构建期依赖物化的临时暂存目录（脚本正常结束时删除；中断时会残留，故不入库）
 /.pnpm-engine-staging/
 /.git-runtime-staging/
+
+# 204 插件-GIT：真机截图（含内网主机名，故意不入库）
+docs/screenshots/
