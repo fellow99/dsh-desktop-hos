@@ -52,6 +52,79 @@ window.__ModuleLoader__.load({
         // itself is the source of truth, this list is only the page's own index.
       }
     }
+    /**
+     * Index one `credentials.describe` answer by reference name.
+     *
+     * The documented shape is an object keyed by ref, but this page cannot afford to *depend* on a
+     * shape it cannot see: on device every row read "状态未知" while the credential was provably
+     * stored, because the answer did not index the way the page read it and the failure was
+     * swallowed. So an answer is accepted as an object, a `Map`, an array of `[ref, info]` pairs,
+     * or an array of rows carrying `ref` / `name` / `credentialRef` — and a key that merely differs
+     * in letter case, or that carries or omits the `GIT_CREDENTIAL_` prefix, matches too.
+     *
+     * Nothing is invented: a ref the answer never names stays absent, so its row keeps saying
+     * "状态未知" rather than guessing a state the store did not report.
+     *
+     * @param answer - whatever `describe` returned.
+     * @param refs - the reference names the caller asked about.
+     * @returns an object with one entry per ref that could be matched.
+     */
+    function indexByRef(answer, refs) {
+      const exact = new Set(refs)
+      const folded = new Map()
+      for (const ref of refs) {
+        folded.set(ref, ref)
+        folded.set(ref.toUpperCase(), ref)
+        folded.set(ref.toUpperCase().replace(/^GIT_CREDENTIAL_/, ''), ref)
+        folded.set(`GIT_CREDENTIAL_${ref.toUpperCase()}`, ref)
+      }
+      const match = rawRef => {
+        if (typeof rawRef !== 'string') return undefined
+        if (exact.has(rawRef)) return rawRef
+        return folded.get(rawRef.toUpperCase())
+      }
+      const out = {}
+      const take = (rawRef, info) => {
+        const target = match(rawRef)
+        if (target === undefined || info === undefined || info === null) return
+        out[target] = info
+      }
+      if (answer instanceof Map) {
+        for (const [ref, info] of answer) take(ref, info)
+      } else if (Array.isArray(answer)) {
+        for (const entry of answer) {
+          if (Array.isArray(entry) && entry.length >= 2) take(entry[0], entry[1])
+          else if (entry && typeof entry === 'object') take(entry.ref ?? entry.name ?? entry.credentialRef, entry)
+        }
+      } else if (answer && typeof answer === 'object') {
+        for (const [ref, info] of Object.entries(answer)) take(ref, info)
+      }
+      return out
+    }
+
+    /**
+     * A short, secret-free description of an unusable `describe` answer, for the page's error line.
+     *
+     * Only the container kind and key names are reported: `CredentialInfo` carries state and never
+     * a value, and this must stay true even if it is handed something else.
+     *
+     * @param answer - whatever `describe` returned.
+     * @returns a one-line description.
+     */
+    function describeShapeOf(answer) {
+      if (answer === null) return 'null'
+      if (answer === undefined) return 'undefined'
+      if (answer instanceof Map) return `Map(${answer.size})`
+      if (Array.isArray(answer)) {
+        const first = answer[0]
+        const keys = first && typeof first === 'object' && !Array.isArray(first)
+          ? ' keys: ' + Object.keys(first).slice(0, 6).join('/')
+          : ''
+        return `array(${answer.length})${keys}`
+      }
+      if (typeof answer === 'object') return `object keys: ${Object.keys(answer).slice(0, 6).join('/')}`
+      return typeof answer
+    }
 
     /**
      * One configured-host row: reference name, live status, and the two write actions.
@@ -89,16 +162,44 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false)
       const [message, setMessage] = React.useState(null)
 
-      /** Re-read every known host's status in one batched call. */
+      /**
+       * Re-read every known host's status in one batched call.
+       *
+       * Returns the outcome so the caller can decide what to tell the user — a status read that
+       * failed must not be overwritten by a success message.
+       *
+       * @param list - the hosts to describe.
+       * @returns `{ ok: true }`, or `{ ok: false, message }` for the page's message line.
+       */
       const refresh = React.useCallback(async (list) => {
         if (list.length === 0) {
           setInfo({})
-          return
+          return { ok: true }
         }
+        const refs = list.map(refForHost)
         try {
-          setInfo(await describe(list.map(refForHost)))
+          const answer = await describe(refs)
+          const indexed = indexByRef(answer, refs)
+          setInfo(indexed)
+          const unmatched = refs.filter(ref => indexed[ref] === undefined)
+          if (unmatched.length > 0) {
+            // The store did not answer for a name it was asked about: report the shape instead of
+            // rendering a silent "状态未知", which is what hid this defect on device.
+            return {
+              ok: false,
+              message: { kind: 'error', text: `${t('error.describe')} (${describeShapeOf(answer)})` },
+            }
+          }
+          return { ok: true }
         } catch (error) {
-          setMessage({ kind: 'error', text: t('error.describe') + ' ' + String(error && error.message ? error.message : error) })
+          setInfo({})
+          return {
+            ok: false,
+            message: {
+              kind: 'error',
+              text: t('error.describe') + ' ' + String(error && error.message ? error.message : error),
+            },
+          }
         }
       }, [describe, t])
 
@@ -117,8 +218,10 @@ window.__ModuleLoader__.load({
           const next = hosts.includes(host.trim()) ? hosts : [...hosts, host.trim()]
           setHosts(next)
           writeHosts(next)
-          await refresh(next)
-          setMessage({ kind: 'ok', text: t('saved') })
+          // Only claim success when the status read that follows actually worked: the earlier build
+          // painted "已保存。" over a describe failure, so every row silently stayed 状态未知.
+          const refreshed = await refresh(next)
+          setMessage(refreshed.ok ? { kind: 'ok', text: t('saved') } : refreshed.message)
         } catch (error) {
           setMessage({ kind: 'error', text: String(error && error.message ? error.message : error) })
         } finally {
