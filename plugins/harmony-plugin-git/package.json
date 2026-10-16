@@ -1,0 +1,20 @@
+{
+  "name": "harmony-plugin-git",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH harmony wrapper plugin: model-facing git tools backed by the pure-JS isomorphic-git implementation, with a repo-root chroot filesystem adapter, sandbox-escalation fencing, and a credential-store-backed settings page",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "README_zh.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  }
+}

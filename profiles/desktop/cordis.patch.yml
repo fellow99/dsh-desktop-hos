@@ -107,3 +107,10 @@
       name: '@deepseek-ai/dsh-host-directory-picker-browse'
     - id: workspace-picker
       name: harmony-plugin-workspace-picker
+    # 需求 204：git 工具集 + 「Git 凭据」设置页。
+    # 挂 host 平面而非 preset 行，是**有意例外**于 plugins/README.md §二.7 —— 设置页要求
+    # dsh.client 客户端面被 client-modules 扫到，而该扫描只遍历 host Loader 的 entries；
+    # 工具在 host 平面注册后对 agent 可见（scoped 仅 shadow，preset 不做 restrict）。
+    # 完整论证见 docs/204-插件-GIT.md §7.1。
+    - id: git
+      name: harmony-plugin-git
