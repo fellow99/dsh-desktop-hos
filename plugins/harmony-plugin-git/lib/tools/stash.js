@@ -38,9 +38,12 @@ async function withStashIdentity(git, fs, dir, config, run) {
     await git.setConfig({ fs, dir, path: 'user.name', value: config.authorName })
     restore.push(['user.name', typeof name === 'string' ? name : undefined])
   }
-  if (typeof email !== 'string') {
+  // An empty `user.email` is as unusable as a missing one: it is exactly the predicate `commit`
+  // and `tag` use when they read the repository identity, so a stash commit is never built with a
+  // blank email while the other two substitute the configured default.
+  if (typeof email !== 'string' || email === '') {
     await git.setConfig({ fs, dir, path: 'user.email', value: config.authorEmail })
-    restore.push(['user.email', undefined])
+    restore.push(['user.email', typeof email === 'string' ? email : undefined])
   }
   try {
     return await run()

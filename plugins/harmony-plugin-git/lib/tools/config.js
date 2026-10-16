@@ -127,6 +127,9 @@ export function applyGitConfigTool(ctx, deps) {
           root: dir,
           action,
           path,
+          // The output schema cannot express `undefined`, so an unset key is carried as `null` and
+          // `renderConfigValue` reads `null` back as "not set" — the model never sees the literal
+          // word `null` for a key that simply does not exist (§10's honesty rule).
           value: value === undefined ? null : value,
           values,
         }

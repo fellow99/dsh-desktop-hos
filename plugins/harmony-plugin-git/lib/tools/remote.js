@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { loadGit } from '../runtime.js'
 import { renderRemoteInfo, renderRemotes, renderServerRefs } from '../report.js'
 import { guardedHttp, mapNetworkError } from './clone.js'
+import { scrubUrl } from '../url.js'
 
 /** The remote actions this tool exposes. */
 const ACTIONS = ['list', 'add', 'delete', 'refs', 'info']
@@ -131,14 +132,17 @@ export function applyGitRemoteTool(ctx, deps) {
         const { git, http } = await loadGit()
 
         if (action === 'refs' || action === 'info') {
-          // The probe needs the git namespace and an HTTP client only — no repository, so the
-          // fence is not opened at all and nothing is written anywhere.
-          guard = guardedHttp(http, exec.signal, deps.config.networkTimeoutMs)
+          // The probe needs the git namespace and an HTTP client only — no repository, so no
+          // repository is opened and nothing is written anywhere. A `dir` is still consulted when
+          // no `url` was given, and that lookup can wait on an approval, so the network timeout is
+          // armed only once the address is known: arming it earlier let a slow approval eat the
+          // whole budget and fail the probe before it ever connected.
           if (url === '') {
             const opened = await deps.fence.open('git_remote', args, exec, args.dir)
             policy = opened.policy
             url = await resolveUrl(git, opened.fs, opened.root, args)
           }
+          guard = guardedHttp(http, exec.signal, deps.config.networkTimeoutMs)
           const callbacks = deps.credentials.callbacks(url)
           const result = action === 'refs'
             ? await git.listServerRefs({
@@ -158,7 +162,7 @@ export function applyGitRemoteTool(ctx, deps) {
               signal: guard.signal,
               ...callbacks,
             })
-          return { root: '', action, name: args.name ?? '', url, remotes: [], result }
+          return { root: '', action, name: args.name ?? '', url: scrubUrl(url), remotes: [], result }
         }
 
         if (args.dir === undefined) {
@@ -187,7 +191,7 @@ export function applyGitRemoteTool(ctx, deps) {
           await git.deleteRemote({ fs, dir, remote: args.name, signal: exec.signal })
         }
         const remotes = await git.listRemotes({ fs, dir, signal: exec.signal })
-        return { root: dir, action, name: args.name ?? '', url, remotes, result: null }
+        return { root: dir, action, name: args.name ?? '', url: scrubUrl(url), remotes, result: null }
       } catch (error) {
         if (exec.signal.aborted) throw error
         throw await mapNetworkError(error, {

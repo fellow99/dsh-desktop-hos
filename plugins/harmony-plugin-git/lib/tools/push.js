@@ -13,6 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { loadGit } from '../runtime.js'
 import { renderPushResult } from '../report.js'
 import { guardedHttp, mapNetworkError } from './clone.js'
+import { scrubUrl } from '../url.js'
 
 /**
  * The server's push result, when an error carries one.
@@ -89,13 +90,23 @@ export function applyGitPushTool(ctx, deps) {
       let guard
       const started = Date.now()
       const remote = args.remote ?? 'origin'
+      // Declared before the `try` so the catch can name the address the push failed against: the
+      // credential key (`GIT_CREDENTIAL_<HOST>`) is derived from the URL, so a failure path that
+      // only had the remote *name* ("origin") would report "no credentials are configured" without
+      // ever naming the key the user has to create (FR-5.3).
+      let url = args.url ?? ''
       try {
         const opened = await deps.fence.open('git_push', args, exec, args.dir)
         policy = opened.policy
         const { git, http } = await loadGit()
-        const remotes = await git.listRemotes({ fs: opened.fs, dir: opened.root })
-        const url = args.url ?? remotes.find(entry => entry.remote === remote)?.url ?? ''
-        const ref = args.ref ?? (await git.currentBranch({ fs: opened.fs, dir: opened.root, fullname: false })) ?? ''
+        const remotes = await git.listRemotes({ fs: opened.fs, dir: opened.root, signal: exec.signal })
+        url = args.url ?? remotes.find(entry => entry.remote === remote)?.url ?? ''
+        const ref = args.ref ?? (await git.currentBranch({
+          fs: opened.fs,
+          dir: opened.root,
+          fullname: false,
+          signal: exec.signal,
+        })) ?? ''
         if (ref === '') {
           throw new Error('git_push: HEAD is detached and no ref was given; pass ref (the branch or tag to push)')
         }
@@ -117,7 +128,7 @@ export function applyGitPushTool(ctx, deps) {
         return {
           root: opened.root,
           remote,
-          url,
+          url: scrubUrl(url),
           ref,
           forced: args.force === true,
           deleted: args.delete === true,
@@ -134,7 +145,7 @@ export function applyGitPushTool(ctx, deps) {
         }
         throw await mapNetworkError(error, {
           tool: 'git_push',
-          url: args.url ?? remote,
+          url,
           elapsedMs: Date.now() - started,
           guard,
           deps,

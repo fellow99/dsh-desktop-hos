@@ -8,6 +8,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { loadGit } from '../runtime.js'
 import { renderFetchResult } from '../report.js'
 import { guardedHttp, mapNetworkError } from './clone.js'
+import { scrubUrl } from '../url.js'
 
 /**
  * Register the `git_fetch` tool.
@@ -75,11 +76,16 @@ export function applyGitFetchTool(ctx, deps) {
       let guard
       const started = Date.now()
       const remote = args.remote ?? 'origin'
+      // Declared before the `try` so the catch can name the address the fetch failed against: the
+      // credential key (`GIT_CREDENTIAL_<HOST>`) is derived from the URL, so a failure path that
+      // only had the remote *name* ("origin") would report "no credentials are configured" without
+      // ever naming the key the user has to create (FR-5.3).
+      let url = args.url ?? ''
       try {
         const opened = await deps.fence.open('git_fetch', args, exec, args.dir)
         policy = opened.policy
         const { git, http } = await loadGit()
-        const url = args.url ?? await remoteUrl(git, opened.fs, opened.root, remote)
+        url = args.url ?? await remoteUrl(git, opened.fs, opened.root, remote, exec.signal)
         guard = guardedHttp(http, exec.signal, deps.config.networkTimeoutMs)
         const result = await git.fetch({
           fs: opened.fs,
@@ -95,12 +101,12 @@ export function applyGitFetchTool(ctx, deps) {
           signal: guard.signal,
           ...deps.credentials.callbacks(url),
         })
-        return { root: opened.root, remote, url, result }
+        return { root: opened.root, remote, url: scrubUrl(url), result }
       } catch (error) {
         if (exec.signal.aborted) throw error
         throw await mapNetworkError(error, {
           tool: 'git_fetch',
-          url: args.url ?? remote,
+          url,
           elapsedMs: Date.now() - started,
           guard,
           deps,
@@ -119,9 +125,10 @@ export function applyGitFetchTool(ctx, deps) {
  * @param {object} fs - the confined repository filesystem.
  * @param {string} dir - the repository root.
  * @param {string} remote - the remote name.
+ * @param {AbortSignal} signal - the call's abort signal, so a cancel interrupts the lookup too.
  * @returns the configured URL, or `''` when the remote is unknown.
  */
-async function remoteUrl(git, fs, dir, remote) {
-  const remotes = await git.listRemotes({ fs, dir })
+async function remoteUrl(git, fs, dir, remote, signal) {
+  const remotes = await git.listRemotes({ fs, dir, signal })
   return remotes.find(entry => entry.remote === remote)?.url ?? ''
 }

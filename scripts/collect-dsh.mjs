@@ -873,7 +873,9 @@ function collectMarketPNPM() {
  * 路由到宿主闭包，因此顶层落位不是解析所必需的 —— 嵌套纯为隔离。
  *
  * 版本 pin 为常量（对齐 DSH_MARKET_VERSION / PNPM_VERSION 先例）；幂等：目标已在且版本相符即跳过。
- * 缺入口或版本不符一律硬失败，避免把半成品打进包。
+ * 缺入口或版本不符一律硬失败，避免把半成品打进包。硬失败一律**抛错**而非 `process.exit(1)`：
+ * 本函数在 `try/finally` 里清 staging，退出进程会跳过 finally，把整棵闭包留在工程根目录；
+ * 终止进程由调用点统一负责。
  */
 function collectGitRuntime() {
   const pluginDest = resolve(distDir, 'node_modules', 'harmony-plugin-git');
@@ -885,8 +887,7 @@ function collectGitRuntime() {
     return;
   }
   if (!existsSync(resolve(pluginDest, 'package.json'))) {
-    console.error(`[collect-dsh] 插件目录缺失，无法物化 git 运行时: ${pluginDest}`);
-    process.exit(1);
+    throw new Error(`插件目录缺失，无法物化 git 运行时: ${pluginDest}`);
   }
 
   const staging = resolve(projectRoot, '.git-runtime-staging');
@@ -898,8 +899,7 @@ function collectGitRuntime() {
     run(`pnpm add isomorphic-git@${ISOMORPHIC_GIT_VERSION} --config.node-linker=hoisted --ignore-scripts`, staging);
     const srcNm = resolve(staging, 'node_modules');
     if (!existsSync(resolve(srcNm, 'isomorphic-git', 'package.json'))) {
-      console.error('[collect-dsh] git 运行时物化失败（isomorphic-git 未落地）');
-      process.exit(1);
+      throw new Error('git 运行时物化失败（isomorphic-git 未落地）');
     }
     rmSync(nested, { recursive: true, force: true });
     mkdirSync(nested, { recursive: true });
@@ -918,31 +918,31 @@ function collectGitRuntime() {
 /**
  * 断言 git 运行时载体就位：版本与 pin 一致，且 ESM 入口与 Node HTTP 客户端存在且非空。
  * 任一不满足即硬失败 —— 这两种缺陷都只会在运行期第一次调用工具时暴露。
+ *
+ * 硬失败一律抛错，不用 `process.exit(1)`：调用点在 `try/finally` 内，退出进程会跳过 finally
+ * 的 staging 清理，把整棵依赖闭包（55 个包）留在工程根目录里。终止进程由调用点统一负责。
+ * @throws {Error} 包清单缺失或不可解析、版本与 pin 不符、入口缺失或为空。
  */
 function assertGitRuntimeArtifact(nested) {
   const pkgPath = resolve(nested, 'isomorphic-git', 'package.json');
   if (!existsSync(pkgPath)) {
-    console.error(`[collect-dsh] git 运行时缺 isomorphic-git 包清单: ${pkgPath}`);
-    process.exit(1);
+    throw new Error(`git 运行时缺 isomorphic-git 包清单: ${pkgPath}`);
   }
   let actual;
   try {
     actual = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
   } catch (err) {
-    console.error(`[collect-dsh] isomorphic-git 包清单不可解析: ${err.message}`);
-    process.exit(1);
+    throw new Error(`isomorphic-git 包清单不可解析: ${err.message}`);
   }
   if (actual !== ISOMORPHIC_GIT_VERSION) {
-    console.error(`[collect-dsh] isomorphic-git 版本不符: 期望 ${ISOMORPHIC_GIT_VERSION}，实际 ${actual}`);
-    process.exit(1);
+    throw new Error(`isomorphic-git 版本不符: 期望 ${ISOMORPHIC_GIT_VERSION}，实际 ${actual}`);
   }
   for (const rel of ['isomorphic-git/index.js', 'isomorphic-git/http/node/index.js']) {
     const entry = resolve(nested, rel);
     let size = 0;
     try { size = statSync(entry).size; } catch { /* 缺失按 0 处理 */ }
     if (!(size > 0)) {
-      console.error(`[collect-dsh] git 运行时入口缺失或为空: ${entry}`);
-      process.exit(1);
+      throw new Error(`git 运行时入口缺失或为空: ${entry}`);
     }
   }
 }
@@ -1038,6 +1038,13 @@ collectMarketPNPM();
 
 // 10c. 物化 git 运行时（需求 204）：isomorphic-git 及其整棵依赖闭包，嵌套在插件自己的
 //      node_modules 下；jsdiff 复用宿主闭包，不再重复发一份（理由见 collectGitRuntime 注释）。
-collectGitRuntime();
+//      失败必须在 staging 清理（collectGitRuntime 的 finally）之后才终止进程，所以这里统一收敛：
+//      抛错时临时目录已经清掉，再打印一行原因并以非零码退出，工程根目录不留残留。
+try {
+  collectGitRuntime();
+} catch (error) {
+  console.error(`[collect-dsh] ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 
 console.log(`\n[collect-dsh] 完成: ${distDir}`);

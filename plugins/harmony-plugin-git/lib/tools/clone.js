@@ -12,6 +12,7 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { loadGit } from '../runtime.js'
+import { scrubErrorUrl, scrubUrl } from '../url.js'
 
 /**
  * Build the HTTP client and abort signal for one network call.
@@ -132,7 +133,7 @@ export function applyGitCloneTool(ctx, deps) {
         const head = await git.resolveRef({ fs: opened.fs, dir: opened.root, ref: 'HEAD' })
         return {
           root: opened.root,
-          url: args.url,
+          url: scrubUrl(args.url),
           branch: branch ?? '',
           head,
           remote,
@@ -188,8 +189,14 @@ export async function mapNetworkError(error, context) {
       + `${Math.round(context.elapsedMs / 1000)} s. For a large repository retry with a smaller \`depth\` and `
       + '`singleBranch: true`, or raise networkTimeoutMs for this deployment.')
   }
-  return deps.fence.mapError(
-    error,
-    context.policy ?? await deps.fence.resolvePolicy(context.tool, context.args, context.exec),
+  // isomorphic-git and the HTTP layer sometimes quote the address they contacted, and the fence
+  // preserves an error it cannot classify — so the text is redacted here, once, before it can
+  // reach the model (AC-8).
+  return scrubErrorUrl(
+    deps.fence.mapError(
+      error,
+      context.policy ?? await deps.fence.resolvePolicy(context.tool, context.args, context.exec),
+    ),
+    context.url,
   )
 }

@@ -12,6 +12,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { loadGit } from '../runtime.js'
 import { resolveIdentity } from './commit.js'
 import { guardedHttp, mapNetworkError } from './clone.js'
+import { scrubUrl } from '../url.js'
 
 /**
  * Register the `git_pull` tool.
@@ -121,7 +122,7 @@ export function applyGitPullTool(ctx, deps) {
         } catch {
           branch = ''
         }
-        return { root: dir, remote, url, branch, before, after, updated: before !== after }
+        return { root: dir, remote, url: scrubUrl(url), branch, before, after, updated: before !== after }
       } catch (error) {
         if (exec.signal.aborted) throw error
         const filepaths = error instanceof Error && Array.isArray(error.data?.filepaths)

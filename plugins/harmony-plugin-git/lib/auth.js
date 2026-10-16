@@ -16,12 +16,15 @@
  * `$DSH_HOME/.credentials.yaml`.
  *
  * The cleartext therefore only ever exists in this process's memory: no tool parameter carries
- * a credential, and nothing here logs or returns the value.
+ * a credential, and nothing here logs or returns the value. Every message below prints the remote
+ * address through {@link scrubUrl}, so an address that carries its own `user:password@` cannot
+ * put that password into the conversation (AC-8).
  *
  * @module harmony-plugin-git/auth
  */
 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { scrubUrl } from './url.js'
 
 /** Prefix of every git credential reference owned by this plugin. */
 export const CREDENTIAL_REF_PREFIX = 'GIT_CREDENTIAL_'
@@ -90,7 +93,7 @@ export class GitCredentials {
       ? 'the credential store'
       : `the credential store under the name "${name}" (Settings → Git 凭据, or $DSH_HOME/.credentials.yaml)`
     return `harmony-plugin-git: this remote requires authentication and no credentials are configured for `
-      + `"${url}". Add them to ${where} as "<username>:<password>".`
+      + `"${scrubUrl(url)}". Add them to ${where} as "<username>:<password>".`
   }
 
   /**
@@ -100,7 +103,7 @@ export class GitCredentials {
    */
   rejectedMessage(url) {
     const name = credentialRefForUrl(url)
-    return `harmony-plugin-git: the credentials configured for "${url}"`
+    return `harmony-plugin-git: the credentials configured for "${scrubUrl(url)}"`
       + `${name === undefined ? '' : ` (${name})`} were rejected by the server. `
       + 'Update them in Settings → Git 凭据, then retry.'
   }

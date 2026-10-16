@@ -17,8 +17,8 @@
  * @module harmony-plugin-git/fs-adapter
  */
 
-import { promises as nodeFs } from 'node:fs'
-import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
+import { promises as nodeFs, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 
 /** Error thrown when a request would leave the repository root. */
 export class PathOutsideRepositoryError extends Error {
@@ -36,26 +36,68 @@ export class PathOutsideRepositoryError extends Error {
 }
 
 /**
- * Resolve one request path against the repository root and prove it stays inside.
+ * Resolve one request path against the repository root and prove it stays inside — **through
+ * symbolic links too**.
  *
- * Absolute requests are accepted only when they are already inside the root (isomorphic-git
- * passes the absolute `dir` it was given, and joins it with relative paths); a relative
- * request is joined then normalised. The result is compared on a path-segment boundary, so a
- * sibling directory sharing a name prefix (`/repo-evil` vs `/repo`) cannot slip through.
+ * The lexical half catches `..` segments, absolute paths, and sibling directories that merely
+ * share a name prefix (`/repo-evil` vs `/repo`). It is necessary but **not sufficient**: a
+ * repository can carry a *tracked* symlink, and isomorphic-git hands that link's path straight
+ * back to this adapter, so a lexically-clean `root/link/secret` can still name a file outside
+ * the root. One tracked symlink in an untrusted clone is all that takes — and on the write side
+ * the same trick would turn `git_checkout` into a write outside the fence.
+ *
+ * The realpath half closes it, and the value returned is the **resolved** path rather than the
+ * requested spelling, so the `node:fs` call that follows cannot traverse the link either.
  *
  * @param root - absolute repository root, already vetted by the fence.
  * @param requestPath - the path isomorphic-git asked for.
- * @returns the absolute path to hand to `node:fs`.
- * @throws PathOutsideRepositoryError when the path escapes the root.
+ * @returns the absolute resolved path to hand to `node:fs`.
+ * @throws PathOutsideRepositoryError when the path escapes the root, lexically or through a link.
  */
 export function resolveWithin(root, requestPath) {
   const base = normalize(resolve(root))
   const candidate = isAbsolute(requestPath) ? normalize(resolve(requestPath)) : normalize(join(base, requestPath))
-  if (candidate === base) return candidate
-  const rel = relative(base, candidate)
-  const escapes = rel === '' ? false : rel.startsWith('..') || isAbsolute(rel)
-  if (escapes) throw new PathOutsideRepositoryError(requestPath, base)
-  return candidate
+  if (candidate !== base) {
+    const rel = relative(base, candidate)
+    if (rel.startsWith('..') || isAbsolute(rel)) throw new PathOutsideRepositoryError(requestPath, base)
+  }
+
+  const realBase = realpathDeepest(base).real
+  const { real, tail } = realpathDeepest(candidate)
+  // `real` must sit inside the root. The second clause covers "nothing under the root exists
+  // yet": both sides then collapse to a common existing ancestor, and the reconstructed path
+  // contains no link at all, so it is inside by construction.
+  const inside = isWithin(realBase, real) || (tail.length > 0 && isWithin(real, realBase))
+  if (!inside) throw new PathOutsideRepositoryError(requestPath, base)
+  return tail.length === 0 ? real : join(real, ...tail)
+}
+
+/**
+ * Realpath of the deepest **existing** ancestor of `target`, plus the trailing segments that do
+ * not exist yet.
+ *
+ * `realpath` answers `ENOENT` for an absent path, and absence is the normal case here: git
+ * creates `.git/objects/…` constantly, so a resolver that demanded existence would be unusable.
+ * Walking up to the first existing ancestor keeps the check meaningful — that ancestor is what
+ * `node:fs` would actually traverse — without inventing a second failure mode.
+ *
+ * @param target - the absolute path to resolve.
+ * @returns the resolved ancestor, and the not-yet-existing segments below it.
+ */
+function realpathDeepest(target) {
+  const tail = []
+  let current = target
+  for (;;) {
+    try {
+      return { real: realpathSync(current), tail }
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error
+      const parent = dirname(current)
+      if (parent === current) throw error
+      tail.unshift(basename(current))
+      current = parent
+    }
+  }
 }
 
 /**
@@ -105,7 +147,9 @@ export function createRepositoryFs(root) {
        */
       symlink: (target, path, type) => {
         const linkPath = at(path)
-        if (isAbsolute(target)) resolveWithin(root, target)
+        // A relative target is resolved against the link's own directory, so `../../..` escapes
+        // exactly as an absolute target does — vet the resolved form either way.
+        resolveWithin(root, isAbsolute(target) ? target : join(dirname(linkPath), target))
         return nodeFs.symlink(target, linkPath, type)
       },
       /** @param {string} path - path whose mode to change. @param {number} mode - requested mode bits. */
@@ -123,8 +167,11 @@ export function createRepositoryFs(root) {
  * @returns true when `candidate` is `root` or below it.
  */
 export function isWithin(root, candidate) {
-  const base = normalize(resolve(root))
-  const other = normalize(resolve(candidate))
+  // Windows paths compare case-insensitively; folding keeps a lexically-correct path from being
+  // refused as if it were outside (fail-closed, but a false rejection is still a bug).
+  const fold = value => (process.platform === 'win32' ? value.toLowerCase() : value)
+  const base = fold(normalize(resolve(root)))
+  const other = fold(normalize(resolve(candidate)))
   if (base === other) return true
   return other.startsWith(base.endsWith(sep) ? base : base + sep)
 }

@@ -444,7 +444,9 @@ function ensureDshMarketProfileLink(home) {
  *
  * 与 dshmarket 的差异：本函数**每次启动都覆盖复制**。dshmarket 采用「已存在即跳过」，但专用插件的内容
  * 随 HAP 迭代，跳过会让 profile 侧 pin 住旧版本（复制进 dsh-dist 的 package.json 已出现过落后于源的情况）。
- * 插件是纯 JS、体量数 KB，覆盖成本可忽略。
+ * 代价随插件体量增长：harmony-plugin-git 自带 isomorphic-git 的整棵依赖闭包（约 9 MB），所以这里
+ * 已不是「数 KB」级别的开销。仍按每次启动执行，因为它换来的是 profile 侧永不 pin 住旧版本，而一份被
+ * pin 住的旧插件比几百毫秒的启动开销更难排查。
  *
  * 末尾附带**同族陈旧目录清理**：`profiles/node_modules` 下匹配 `dsh-plugin-*` / `harmony-plugin-*`
  * 但不在本次源集合中的目录会被移除，使 profile 侧忠实镜像 dsh-dist 侧，并消除「旧包残留 + 旧 preset 行

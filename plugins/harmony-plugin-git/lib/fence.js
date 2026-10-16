@@ -34,6 +34,29 @@ import { createRepositoryFs, isWithin } from './fs-adapter.js'
 const PARENT_PATH_SEGMENT = /(?:^|[\\/])\.\.(?:[\\/]|$)/
 
 /**
+ * Per-call memory of a resolved sandbox policy, keyed on the tool call's own `exec` object.
+ * See {@link GitRepositoryFence.resolvePolicy} for why resolving twice in one call is a defect.
+ * @type {WeakMap<object, object | undefined>}
+ */
+const resolvedPolicies = new WeakMap()
+
+/**
+ * Whether an error means "there is no repository here".
+ *
+ * Measured against isomorphic-git 1.44.2, which reports a missing repository as
+ * `NotFoundError: Could not find HEAD.` — while a *missing file* is also a `NotFoundError`
+ * (`Could not find x.txt.`). Only the HEAD wording may be re-labelled as "not a repository";
+ * widening it would tell the model to run `git_init` when it merely mistyped a path.
+ *
+ * @param error - the thrown error.
+ * @returns true when the error says the repository itself is absent.
+ */
+function isMissingRepository(error) {
+  if (!(error instanceof Error) || error.code !== 'NotFoundError') return false
+  return typeof error.message === 'string' && /^Could not find HEAD\.?$/i.test(error.message.trim())
+}
+
+/**
  * The calling agent's per-session workspace cwd, or `undefined` for an agent-less call (the
  * backend then applies its own default).
  * @param exec - the tool-execution context; only its optional `agent` is read.
@@ -112,9 +135,21 @@ export class GitRepositoryFence {
    * @returns the policy for this call, or `undefined` for an unsandboxed backend.
    */
   async resolvePolicy(toolName, args, exec) {
+    // One call resolves its policy exactly once. Without this memo the denial path resolves it
+    // twice: `open()` resolves the policy and only then may refuse, while every tool's catch asks
+    // again for a policy to report with — so a denied call would put a **second** approval panel
+    // in front of the user, and a second refusal would replace the `[sandbox: …]` marker with a
+    // generic error. The memo is keyed on `exec`, which is a fresh object per tool call, so it is
+    // per-call by construction and cannot leak a grant into the next call.
+    const memoized = resolvedPolicies.get(exec)
+    if (memoized !== undefined) return memoized
+
     validateEscalationArgs(args.sandbox_permissions, args.justification)
     const standingPolicy = this.policy?.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
-    if (args.sandbox_permissions === undefined || args.justification === undefined) return standingPolicy
+    if (args.sandbox_permissions === undefined || args.justification === undefined) {
+      resolvedPolicies.set(exec, standingPolicy)
+      return standingPolicy
+    }
     if (this.escalationModes.length === 0) {
       throw new Error('sandbox_permissions is not available in this composition (no sandboxing filesystem to escalate)')
     }
@@ -133,7 +168,9 @@ export class GitRepositoryFence {
         signal: exec.signal,
       },
     )
-    return { ...standingPolicy, mode: approvedMode }
+    const resolved = { ...standingPolicy, mode: approvedMode }
+    resolvedPolicies.set(exec, resolved)
+    return resolved
   }
 
   /**
@@ -146,12 +183,24 @@ export class GitRepositoryFence {
    * @returns the marker `FsError` for a sandbox denial, else the original error.
    */
   mapError(error, policy) {
-    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED') return error
-    return new FsError(
-      `${sandboxDenialMarker(policy.mode)}\n${escalationHintMarker('operation')}`,
-      'FS_SANDBOX_DENIED',
-      { cause: error },
-    )
+    const effective = policy ?? error?.policy
+    if (error instanceof FsError && error.code === 'FS_SANDBOX_DENIED') {
+      return new FsError(
+        `${sandboxDenialMarker(effective?.mode ?? 'unknown')}\n${escalationHintMarker('operation')}`,
+        'FS_SANDBOX_DENIED',
+        { cause: error },
+      )
+    }
+    // §13 promises that "the target is not a git repository" is explained and names the fix, and
+    // the library's own text ("Could not find HEAD.") does not. Mapping it here keeps that promise
+    // in one place instead of in twenty-one catches.
+    if (isMissingRepository(error)) {
+      return new Error(
+        'harmony-plugin-git: this directory is not a git repository. Use git_init to create one '
+        + 'here, or git_clone to fetch an existing one.',
+      )
+    }
+    return error
   }
 
   /**
@@ -179,12 +228,18 @@ export class GitRepositoryFence {
     })
     const root = this.ctx.fs.processPath(target)
 
-    if (policy !== undefined && policy.mode !== 'danger-full-access' && !isWithin(policy.workspaceRoot, root)) {
-      throw new FsError(
+    const workspaceRoot = policy?.workspaceRoot
+    if (policy !== undefined && policy.mode !== 'danger-full-access'
+      && workspaceRoot !== undefined && !isWithin(workspaceRoot, root)) {
+      const refusal = new FsError(
         `harmony-plugin-git: the repository "${root}" is outside the session workspace `
-        + `"${policy.workspaceRoot}", so this git operation was refused.`,
+        + `"${workspaceRoot}", so this git operation was refused.`,
         'FS_SANDBOX_DENIED',
       )
+      // Carry the policy on the refusal so a catch that only has the error can still name the
+      // denying mode instead of printing "unknown".
+      refusal.policy = policy
+      throw refusal
     }
 
     return { root, fs: createRepositoryFs(root), policy }

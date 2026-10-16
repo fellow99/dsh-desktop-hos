@@ -100,9 +100,10 @@ export async function loadGit() {
  * second, shadowing copy of a library already in the image. Verified on device: resolving
  * `diff` from this plugin's own directory answers `dsh-dist/node_modules/diff@9.0.0`.
  *
- * The reuse is guarded rather than assumed: only `createTwoFilesPatch` is consumed, and both the
- * loaded major version and that entry point are asserted, because a host upgrade can move the
- * major version without touching this plugin.
+ * The reuse is guarded rather than assumed: only `createTwoFilesPatch` is consumed, that entry
+ * point is asserted outright, and the host's major version is checked whenever it can be read — a
+ * host upgrade can move the major without touching this plugin, while an unreadable manifest is not
+ * treated as evidence of a mismatch.
  *
  * @returns the jsdiff module namespace.
  * @throws when `diff` is unresolvable, its major version moved, or the entry point is missing.
@@ -116,8 +117,16 @@ export async function loadDiff() {
       throw unavailable('diff', error, HOST_DIFF_REMEDY)
     }
     const actual = readPackageVersion('diff')
+    // A host that stops exporting `./package.json` makes the version unreadable. That is not
+    // evidence of a wrong major, and the entry-point assertion below still proves the API this
+    // plugin consumes — so an unreadable version warns instead of disabling every diff tool, which
+    // is what an unconditional major check did.
     const major = Number.parseInt(String(actual).split('.')[0], 10)
-    if (major !== SUPPORTED_JSDIFF_MAJOR) {
+    if (Number.isNaN(major)) {
+      console.warn(`harmony-plugin-git: the host's diff version could not be read (${actual}); this `
+        + `plugin renders unified diffs against major ${SUPPORTED_JSDIFF_MAJOR}, and the `
+        + 'createTwoFilesPatch assertion below is the check that still holds.')
+    } else if (major !== SUPPORTED_JSDIFF_MAJOR) {
       throw new Error(
         `harmony-plugin-git: the host provides diff ${actual}, but this plugin renders unified diffs `
         + `against major ${SUPPORTED_JSDIFF_MAJOR} (docs/204-插件-GIT.md §7.3). Either keep the host `

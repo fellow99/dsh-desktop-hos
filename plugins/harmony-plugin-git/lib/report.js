@@ -11,11 +11,14 @@
  *   "no commits", "the stash is empty"); an empty string reads as a silent success.
  * - **Failures keep the server's words.** `renderPushResult` prints the remote's own `error`
  *   verbatim — a rejected push is never dressed up as a success.
- * - **Nothing about credentials.** These renderers never see a credential, and they must not
- *   print one if they ever did.
+ * - **Nothing about credentials.** These renderers never see a credential, and every URL they
+ *   print goes through `scrubUrl` — an address that carries its own `user:password@` can therefore
+ *   never put that password into the conversation (AC-8).
  *
  * @module harmony-plugin-git/report
  */
+
+import { scrubUrl } from './url.js'
 
 /**
  * `git status --short` codes for the status matrix, straight from the documented mapping of
@@ -30,7 +33,11 @@ const SHORT_STATUS = new Map([
   ['1,0,0', 'D '],
   ['1,0,1', ' D'],
   ['1,0,3', 'MD'],
-  ['1,1,0', ' D'],
+  // `1,1,0` is a *staged* deletion — HEAD has the file, the index does not, and the worktree copy
+  // that still matches HEAD is now untracked. git prints `D ` in the first column and does not
+  // list the path a second time; printing ` D` here made the path look worktree-deleted and made
+  // it appear in two groups at once.
+  ['1,1,0', 'D '],
   ['1,1,1', ''],
   ['1,1,3', 'MM'],
   ['1,2,0', 'D '],
@@ -133,10 +140,13 @@ export function renderStatus(rows, options = {}) {
     : `branch ${options.branch}${head === undefined ? '' : ` (HEAD ${head})`}`
   lines.push(`On ${branch}`)
 
+  // Each path is listed under exactly one group, in the order git itself would report it: an entry
+  // that is staged belongs to "Staged for commit" even when the same path is also deleted in the
+  // working tree (`MD`) or deleted from the index (`D `), so no path is counted twice.
   const groups = [
     ['Staged for commit', entries.filter(entry => entry.staged)],
-    ['Modified in the working tree, not staged', entries.filter(entry => entry.modified && !entry.untracked)],
-    ['Deleted', entries.filter(entry => entry.deleted)],
+    ['Modified in the working tree, not staged', entries.filter(entry => !entry.staged && entry.modified && !entry.untracked)],
+    ['Deleted', entries.filter(entry => !entry.staged && entry.deleted)],
     ['Untracked', entries.filter(entry => entry.untracked)],
   ]
   const conflicted = entries.filter(entry => conflicting.has(entry.path))
@@ -311,7 +321,7 @@ export function renderTags(tags) {
 export function renderRemotes(remotes) {
   if (remotes.length === 0) return 'No remotes configured in this repository.'
   const lines = [`${remotes.length} ${remotes.length === 1 ? 'remote' : 'remotes'}:`]
-  for (const remote of remotes) lines.push(`  ${remote.remote}  ${remote.url}`)
+  for (const remote of remotes) lines.push(`  ${remote.remote}  ${scrubUrl(remote.url)}`)
   return lines.join('\n')
 }
 
@@ -324,7 +334,7 @@ export function renderRemotes(remotes) {
  * @returns the model-facing report; never empty.
  */
 export function renderServerRefs(refs, options = {}) {
-  const where = options.url ?? 'the remote'
+  const where = options.url === undefined ? 'the remote' : scrubUrl(options.url)
   if (refs.length === 0) {
     return `${where} returned no refs${options.prefix === undefined ? '' : ` under "${options.prefix}"`}: `
       + 'the repository is empty, the prefix matches nothing, or the refs are hidden.'
@@ -347,7 +357,7 @@ export function renderServerRefs(refs, options = {}) {
  * @returns the model-facing report; never empty.
  */
 export function renderRemoteInfo(info, options = {}) {
-  const where = options.url ?? 'the remote'
+  const where = options.url === undefined ? 'the remote' : scrubUrl(options.url)
   const capabilities = Object.keys(info.capabilities ?? {})
   const lines = [`${where}: git protocol version ${info.protocolVersion ?? 'unknown'}`]
   lines.push(capabilities.length === 0
@@ -383,7 +393,9 @@ export function renderStashEntries(entries) {
  * @returns the model-facing report; never empty.
  */
 export function renderFetchResult(result, options = {}) {
-  const where = options.remote === undefined ? (options.url ?? 'the remote') : `"${options.remote}"`
+  const where = options.remote === undefined
+    ? (options.url === undefined ? 'the remote' : scrubUrl(options.url))
+    : `"${options.remote}"`
   const lines = []
   const head = shortOid(result.fetchHead)
   if (head === undefined) {
@@ -457,7 +469,7 @@ export function renderPushResult(result) {
  * @returns the model-facing report; never empty.
  */
 export function renderConfigValue(path, value) {
-  if (value === undefined) return `${path} is not set in this repository's config.`
+  if (value === undefined || value === null) return `${path} is not set in this repository's config.`
   return `${path} = ${typeof value === 'string' ? JSON.stringify(value) : String(value)}`
 }
 

@@ -134,9 +134,10 @@ export function applyGitResetTool(ctx, deps) {
             await git.resetIndex({ fs, dir, filepath: path, ref, signal: exec.signal })
           }
         } else {
-          if (mode === 'soft' || mode === 'mixed' || mode === 'hard') {
-            const head = await git.resolveRef({ fs, dir, ref: 'HEAD' })
-            if (head !== target) {
+          const head = await git.resolveRef({ fs, dir, ref: 'HEAD' })
+          const movesPointer = head !== target
+          if (mode === 'soft' || mode === 'mixed') {
+            if (movesPointer) {
               await git.writeRef({
                 fs,
                 dir,
@@ -158,15 +159,28 @@ export function applyGitResetTool(ctx, deps) {
             }
           }
           if (mode === 'hard') {
-            // The pointer already moved, so checking out the branch (or the detached target)
-            // rewrites index and working tree from the target tree.
-            await git.checkout({
-              fs,
-              dir,
-              ref: branchRef ?? target,
-              force: true,
-              signal: exec.signal,
-            })
+            // `--hard` is the one mode that must **not** move the pointer first: a checkout that
+            // failed after `writeRef` would leave the branch pointing at the target while the
+            // working tree still held the old content — a repository matching no commit. So the
+            // working tree and index are rewritten first, by checking the target commit out (which
+            // detaches HEAD onto it, the same intermediate state native git passes through), then
+            // the branch is moved, then HEAD is re-attached to that branch. Every failure before
+            // the final step leaves the old branch pointer over the old working tree.
+            await git.checkout({ fs, dir, ref: target, force: true, signal: exec.signal })
+            if (movesPointer) {
+              await git.writeRef({
+                fs,
+                dir,
+                ref: branchRef ?? 'HEAD',
+                value: target,
+                force: true,
+                signal: exec.signal,
+              })
+              moved = true
+            }
+            if (branchRef !== undefined) {
+              await git.checkout({ fs, dir, ref: branchRef, force: true, signal: exec.signal })
+            }
           }
         }
 

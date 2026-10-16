@@ -66,6 +66,8 @@ export function applyGitAddTool(ctx, deps) {
           paths: { type: 'array', required: true, items: { type: 'string' } },
           ignored: { type: 'array', required: true, items: { type: 'string' } },
           rows: { type: 'json', required: true },
+          branch: { type: 'string', required: true },
+          head: { type: 'string', required: true },
         },
       },
       render: (_args, value) => {
@@ -80,6 +82,8 @@ export function applyGitAddTool(ctx, deps) {
           type: 'text',
           text: `${what}${ignored}\n\nIndex state now:\n${renderStatus(value.rows, {
             root: value.root,
+            branch: value.branch === '' ? undefined : value.branch,
+            head: value.head,
             conflicts: [],
           })}`,
         }]
@@ -130,7 +134,27 @@ export function applyGitAddTool(ctx, deps) {
           filepaths: paths,
           signal: exec.signal,
         })
-        return { root: opened.root, action, paths, ignored, rows }
+        // Read after the change, so the report's header describes the same state the rows do — the
+        // render calls `renderStatus`, which otherwise has no branch to name and prints "On detached
+        // HEAD" even on a branch (the same call shape `git_reset` already uses).
+        let branch = ''
+        try {
+          branch = (await git.currentBranch({
+            fs: opened.fs,
+            dir: opened.root,
+            fullname: false,
+            signal: exec.signal,
+          })) ?? ''
+        } catch {
+          branch = ''
+        }
+        let head = ''
+        try {
+          head = await git.resolveRef({ fs: opened.fs, dir: opened.root, ref: 'HEAD' })
+        } catch {
+          head = ''
+        }
+        return { root: opened.root, action, paths, ignored, rows, branch, head }
       } catch (error) {
         if (exec.signal.aborted) throw error
         throw deps.fence.mapError(error, policy ?? await deps.fence.resolvePolicy('git_add', args, exec))
