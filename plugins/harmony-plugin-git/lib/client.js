@@ -373,7 +373,7 @@ window.__ModuleLoader__.load({
             ['zh', {
               'nav': 'Git 凭据',
               'title': 'Git 凭据',
-              'lead': '需要认证的远端所用的用户名与密码；只保存在本机凭据库。',
+              'lead': '需要认证的远端所用的凭据；保存在 ~/.dsh/.git-credentials（git 原生格式，可手工编辑）。',
               'field.host': '主机，例如 git.example.com:8443',
               'field.username': '用户名',
               'field.password': '密码',
@@ -394,7 +394,7 @@ window.__ModuleLoader__.load({
             ['en', {
               'nav': 'Git credentials',
               'title': 'Git credentials',
-              'lead': 'Username and password for remotes that require authentication; stored only in this machine\u2019s credential store.',
+              'lead': 'Credentials for authenticated remotes; stored in ~/.dsh/.git-credentials in git\u2019s own format, so they can be edited or copied by hand.',
               'field.host': 'Host, e.g. git.example.com:8443',
               'field.username': 'Username',
               'field.password': 'Password',

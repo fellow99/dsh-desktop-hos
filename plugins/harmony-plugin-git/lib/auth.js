@@ -25,6 +25,32 @@
 
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { scrubUrl } from './url.js'
+import { gitCredentialsPath, matchCredential, readCredentials, writeCredentials } from './git-credentials.js'
+
+/**
+ * The protocol and host a credential file line for this URL would carry.
+ * @param url - the remote URL.
+ * @returns `{ protocol, host }`, or `undefined` when the URL cannot be parsed.
+ */
+function credentialFileTarget(url) {
+  try {
+    const parsed = new URL(url)
+    return { protocol: parsed.protocol.replace(/:$/, ''), host: parsed.host }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * A placeholder credential-file line for a URL, naming its protocol and host without inventing a
+ * secret — the remedy text uses it so the user sees the exact shape to paste.
+ * @param url - the remote URL.
+ * @returns the example line, or `undefined` when the URL cannot be parsed.
+ */
+function credentialFileExample(url) {
+  const target = credentialFileTarget(url)
+  return target === undefined ? undefined : `${target.protocol}://<username>:<password>@${target.host}`
+}
 
 /** Prefix of every git credential reference owned by this plugin. */
 export const CREDENTIAL_REF_PREFIX = 'GIT_CREDENTIAL_'
@@ -72,6 +98,24 @@ export class GitCredentials {
    * @returns the resolved pair, or `undefined` when nothing is stored or the value is unusable.
    */
   async lookup(url) {
+    const fromStore = await this.storeLookup(url)
+    // Where the credential comes from is a precedence question this class owns: the settings page's
+    // store wins for a host the user has saved there (that write is the newest intent), and git's own
+    // file answers for everything else — including a file copied from a workstation or hand-edited.
+    if (fromStore !== undefined) {
+      this.mirrorToFile(url, fromStore)
+      return fromStore
+    }
+    const fromFile = matchCredential(readCredentials().entries, url)
+    return fromFile === undefined ? undefined : { username: fromFile.username, password: fromFile.password }
+  }
+
+  /**
+   * The credential the shell's own store holds for a URL, if any.
+   * @param url - the remote URL git is about to contact.
+   * @returns the resolved pair, or `undefined` when the store has nothing usable.
+   */
+  async storeLookup(url) {
     const name = credentialRefForUrl(url)
     if (name === undefined) return undefined
     const store = this.ctx.get('credentials')
@@ -79,6 +123,28 @@ export class GitCredentials {
     const hit = await store.resolve(credentialRef(name))
     if (hit === undefined || typeof hit.value !== 'string') return undefined
     return parseCredentialValue(hit.value)
+  }
+
+  /**
+   * Keep git's own credential file in step with a credential the shell resolved.
+   *
+   * This is what makes `<dsh config dir>/.git-credentials` true rather than aspirational: any
+   * credential the git tools actually use is *also* present in the file, in the format `git`
+   * itself reads, so the same `$DSH_HOME` works for a `git` binary elsewhere.
+   *
+   * Best effort on purpose — a read-only or full config directory must not fail an operation that
+   * already has the credentials it needs.
+   * @param url - the remote URL the credential belongs to.
+   * @param credential - the resolved pair.
+   */
+  mirrorToFile(url, credential) {
+    const target = credentialFileTarget(url)
+    if (target === undefined) return
+    try {
+      writeCredentials({ ...target, username: credential.username, password: credential.password })
+    } catch {
+      // See above: the store remains the working source for this credential.
+    }
   }
 
   /**
@@ -92,8 +158,10 @@ export class GitCredentials {
     const where = name === undefined
       ? 'the credential store'
       : `the credential store under the name "${name}" (Settings → Git 凭据, or $DSH_HOME/.credentials.yaml)`
+    const example = credentialFileExample(url)
     return `harmony-plugin-git: this remote requires authentication and no credentials are configured for `
-      + `"${scrubUrl(url)}". Add them to ${where} as "<username>:<password>".`
+      + `"${scrubUrl(url)}". Add them to ${where} as "<username>:<password>"`
+      + `${example === undefined ? '' : `, or add a line like "${example}" to ${gitCredentialsPath()}`}.`
   }
 
   /**
@@ -105,7 +173,7 @@ export class GitCredentials {
     const name = credentialRefForUrl(url)
     return `harmony-plugin-git: the credentials configured for "${scrubUrl(url)}"`
       + `${name === undefined ? '' : ` (${name})`} were rejected by the server. `
-      + 'Update them in Settings → Git 凭据, then retry.'
+      + `Update them in Settings → Git 凭据 (or ${gitCredentialsPath()}), then retry.`
   }
 
   /**
