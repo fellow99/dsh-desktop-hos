@@ -25,7 +25,7 @@
 - **`ctx.fs` seam 原语不足以承载 git**。该 seam 只有 `resolve` / `processPath` / `fileUrl` / `contains` / `stat` / `lstat` / `readText` / `streamText` / `readBytes` / `readByteRange` / `listDir` / `writeText` / `editText`（+ 本工程补丁补的 `remove` / `writeBytes` / `chmod`），**没有 `mkdir` / `rmdir` / `unlink` / `rename` / `symlink` / `readlink`**。故本模块在插件内以 `node:fs/promises` 提供 **仓库根 chroot 适配器**，而不是扩 seam（方案对比与否决见设计文档 §6.1）。
 - **设置页 UI 只能由 host 平面承载**。`dsh.client` 客户端面只从 host Loader 的 entries 扫描，agent preset 的行扫不到；而 host 平面注册的工具对 agent 可见。因此必须选对装配平面（FR-2）。
 - **isomorphic-git 的依赖不可省**。其发布物把 11 个依赖标为 external，故 `node_modules` 必须一并供给（FR-8）。
-- **isomorphic-git 缺 `diff` / `show` / `revert` / `rebase`**。`diff` 引入 jsdiff 生成 unified diff；`show` / `revert` 自建；`rebase` 明确不交付（FR-7、FR-9）。
+- **isomorphic-git 缺 `diff` / `show` / `revert` / `rebase`**。`diff` 由**宿主闭包**里的 jsdiff（`diff ^9.0.0`，插件不物化）生成 unified diff；`show` / `revert` 自建；`rebase` 明确不交付（FR-7、FR-9）。
 - **凭据明文不得外泄**。明文不进对话、不进日志、不进 `cordis.yml`；凭据只经凭据库存放与读取（FR-5、FR-6）。
 - **工作区外仓库必须先经用户审批**。围栏决策点是仓库根，越界即拒并复用既有提权审批链路（FR-4）。
 
@@ -173,7 +173,7 @@
 
 **FR-7.1 `show`** 读 `readCommit` / `readTree` / `readBlob` / `readTag` 拼装输出：提交元信息（作者、时间、parents、message）+ 变更清单 + 逐 blob 内容。**无需新依赖**。
 
-**FR-7.2 `diff`** `statusMatrix` 给变动清单，`readBlob` 取两侧字节，jsdiff 的 `createTwoFilesPatch` 产出标准 unified diff。
+**FR-7.2 `diff`** `statusMatrix` 给变动清单，`readBlob` 取两侧字节，**宿主闭包** jsdiff（`diff ^9.0.0`）的 `createTwoFilesPatch` 产出标准 unified diff。
 
 - `stat` 模式：只汇总新增 / 删除 / 修改行数。
 - `pathspec` 过滤：只对匹配路径取 blob。
@@ -192,15 +192,15 @@
 
 **FR-8.1（形状）** `scripts/collect-dsh.mjs` 新增 `collectGitRuntime()`，形状照抄同文件的 `collectMarketPNPM()` 先例（收集期拉取 npm 包已有先例且证明可行）。
 
-**FR-8.2（版本 pin）** 常量 pin：`ISOMORPHIC_GIT_VERSION = '1.44.2'`、`JSDIFF_VERSION = '8.0.2'`（对齐 `DSH_MARKET_VERSION = '1.66.7'` / `PNPM_VERSION` 先例）。
+**FR-8.2（版本 pin）** 常量只 pin `ISOMORPHIC_GIT_VERSION = '1.44.2'`（对齐 `DSH_MARKET_VERSION = '1.66.7'` / `PNPM_VERSION` 先例）；**没有** jsdiff 的 pin 常量 —— jsdiff 复用宿主闭包，插件侧只以 `SUPPORTED_JSDIFF_MAJOR = 9` 守 major。
 
-**FR-8.3（拉取）** 在临时 staging 里 `pnpm add isomorphic-git@1.44.2 diff@8.0.2 --config.node-linker=hoisted --ignore-scripts`。
+**FR-8.3（拉取）** 在临时 staging 里 `pnpm add isomorphic-git@1.44.2 --config.node-linker=hoisted --ignore-scripts`（命令里**不含** `diff`）。
 
-**FR-8.4（嵌套落位，关键）** isomorphic-git 及其**整棵闭包**复制到 `dsh-dist/node_modules/isomorphic-git/node_modules/`；`diff` 零依赖，落顶层 `dsh-dist/node_modules/diff`。嵌套是关键：Node 解析 isomorphic-git 的 `simple-get` / `readable-stream` / `buffer` 等时优先命中它自己的嵌套层，**绝不覆盖或冲突 dsh 自己的扁平依赖树**（顶层已有同名包时尤其重要）。
+**FR-8.4（嵌套落位，关键）** isomorphic-git 及其**整棵闭包**复制到**插件自己**的 `dsh-dist/node_modules/harmony-plugin-git/node_modules/`；`diff` **完全不物化**。落点在插件目录内部，依据是运行期镜像方式：`ensureDshPluginsProfileLink()` 每次启动把 `dsh-dist/node_modules/harmony-plugin-*` **整目录递归复制**（`cpSync`）到 `$DSH_HOME/profiles/node_modules/`，嵌套闭包随之一起过去，插件自身的裸 `import 'isomorphic-git'` 因此命中自己的嵌套层；若把闭包落在 dsh 顶层那一层（插件目录之外），那次复制反而带不上它 —— 复制源只取 `harmony-plugin-*` 目录。嵌套同时保证 Node 解析 isomorphic-git 的 `simple-get` / `readable-stream` / `buffer` 等时优先命中它自己的嵌套层，**绝不覆盖或冲突 dsh 自己的扁平依赖树**（顶层已有同名包时尤其重要）。
 
-**FR-8.5（断言与幂等）** 断言：入口存在且非空、版本号与 pin 一致；幂等（目标已有 `package.json` 即跳过快路径，**快路径同样要跑断言**）。HTTP 客户端采用 `isomorphic-git/http/node`（`simple-get`，走 node `http` / `https`）。
+**FR-8.5（断言与幂等）** 断言：入口存在且非空、版本号与 pin 一致；失败一律**抛错**而不用 `process.exit(1)`（退出进程会跳过 `finally` 里的 staging 清理），终止进程由调用点 `try/catch` 统一负责；幂等（目标已有 `package.json` 即跳过快路径，**快路径同样要跑断言** —— 但正常构建每次先删 `distDir`，快路径在常规链路不可达，只能靠单独二次调用验证）。HTTP 客户端采用 `isomorphic-git/http/node`（`simple-get`，走 node `http` / `https`）。
 
-**FR-8.6（体积）** 实测 `isomorphic-git@1.44.2` + `http/node` = 55 包 / 8.6 MB，`diff@8.0.2` = 零依赖 / 800 KB；**不裁剪**（裁剪第三方包内容属额外维护面）。
+**FR-8.6（体积）** 实测 `isomorphic-git@1.44.2` + `http/node` = 55 包 / 8.6 MB，这就是 `dsh-dist` 的**全部**增量；jsdiff **不物化** —— `diff` 由宿主闭包提供（dsh 自身 `dsh-tool-fs` / `dsh-workspace-changes` / `dsh-client-ui-trajectory` / `dsh-client-ui-primitives` 四个包声明 `diff ^9.0.0`，`app-boot` 的 profile resolution 把插件裸包名请求路由进宿主闭包，设备实测解析到 `dsh-dist/node_modules/diff@9.0.0`），故不存在第二份 diff、无 0.8 MB 增量，也无「本插件的 diff 覆盖 dsh 自身 diff」的冲突面；**不裁剪**（裁剪第三方包内容属额外维护面）。
 
 ### FR-9 错误与取消语义
 
@@ -237,14 +237,14 @@ plugins/harmony-plugin-git/                       ← 新专用插件（dual-fac
 │                     exports { ".": "./lib/index.js", "./client": "./lib/client.js" }
 │                     dsh.client { platform: "web", inject: [...] }
 │                     peerDeps: cordis, dsh-tools, dsh-fs, dsh-sandbox,
-│                               dsh-credentials, schemastery
+│                               dsh-credentials, schemastery, diff（^9.0.0，宿主闭包）
 ├── lib/
 │   ├── index.js      host 面：命名导出 name / inject / Config / apply
-│   ├── runtime.js    isomorphic-git 与 jsdiff 的动态 import + 版本断言
+│   ├── runtime.js    isomorphic-git（插件内嵌套闭包）与 jsdiff（宿主闭包）的动态 import + 版本断言
 │   ├── fence.js      仓库根解析 + chroot 校验 + 提权（对齐 FsMutationSandbox）
 │   ├── fs-adapter.js isomorphic-git 的 fs 适配器（node:fs/promises，chroot 内）
 │   ├── auth.js       按 host 解析 ctx.credentials 凭据 → onAuth / onAuthFailure
-│   ├── diff.js       jsdiff 封装（unified diff / stat / 二进制检测）
+│   ├── diff.js       宿主闭包 jsdiff 封装（unified diff / stat / 二进制检测）
 │   ├── report.js     输出渲染（status 矩阵、提交摘要、冲突列表…）
 │   └── tools/        21 个工具，一文件一工具
 ├── lib/client.js     client 面：注册 settings.section「Git 凭据」
@@ -261,7 +261,7 @@ plugins/harmony-plugin-git/                       ← 新专用插件（dual-fac
 | 目录名 = 包名 | 是 | 是 |
 | `dsh.client` 可被扫描 | 否（agent 平面扫不到） | **是**（host Loader entries 才被 `client-modules` 扫描） |
 | 工具对 agent 可见 | 是（scoped 层） | 是（全局层；未被 `restrict()` 时对 agent 可见） |
-| 依赖供给 | 由宿主 `dsh-dist/node_modules` 提供 | 同上 + **`collectGitRuntime()` 额外物化 isomorphic-git 嵌套闭包与 jsdiff** |
+| 依赖供给 | 由宿主 `dsh-dist/node_modules` 提供 | 同上 + **`collectGitRuntime()` 只额外物化 isomorphic-git 闭包（嵌套在插件自己的 `node_modules/`）；`diff` 复用宿主闭包** |
 | 例外登记 | — | **有意例外**，须在原位新增一节（FR-2.2） |
 
 ## 5. 验收标准
@@ -278,8 +278,8 @@ plugins/harmony-plugin-git/                       ← 新专用插件（dual-fac
 | AC-8 | 凭据明文**不出现**在对话记录、`hilog`、`cordis.yml` 中 | 检索三处 |
 | AC-9 | `rebase` 明确报「本平台不支持」，不静默降级 | 对话验证 |
 | AC-10 | `revert` 在工作区分叉时 fail-closed 拒绝并列出冲突路径 | 构造分叉场景 |
-| AC-11 | 构建期 `collectGitRuntime()` 物化成功且幂等；`dsh-dist/node_modules/isomorphic-git/node_modules/` 存在 | 构建日志 |
-| AC-12 | `dsh-dist` 内不出现 `isomorphic-git` 的依赖覆盖 dsh 顶层同名包（嵌套成立） | 构建产物核对 |
+| AC-11 | 构建期 `collectGitRuntime()` 物化成功；`dsh-dist/node_modules/harmony-plugin-git/node_modules/isomorphic-git/`（含整棵闭包）存在。幂等性须**单独二次调用**验证：正常构建每次先删 `distDir`，快路径在常规链路不可达 | 构建日志 + 一次单独二次调用 |
+| AC-12 | 嵌套成立：isomorphic-git 的依赖不覆盖 dsh 顶层同名包；且本插件**根本不发 `diff`** —— 顶层 `dsh-dist/node_modules/diff` 必须仍是宿主的 `9.0.0`，插件的 `node_modules/` 内不出现 `diff` | 构建产物核对 |
 | AC-13 | 工具面覆盖缺口已补齐：test-cases.md §4.1 的操作清单覆盖 FR-3 全部 **21 个工具**——相对 AC-4 枚举的 18 个，缺口由 AN-17（`git_push`）、AN-18（`git_init`）、AN-19（`git_remote`）补齐，「一工具一组用例」成立 | 文档对照（21 行工具表 ↔ 操作清单）+ 真机执行 AN-17 / AN-18 / AN-19 |
 | AC-14 | `git_config` 身份链成立：`setConfig` 写**仓库本地** `user.name` / `user.email`，`getConfig` 回读一致，且随后 `git_commit` 的作者身份取自该配置（未设置时取 `Config` 默认占位值） | 真机 test-cases.md §4.1 的 AN-20 + AN-21（对话 + 读提交作者） |
 
@@ -291,12 +291,12 @@ plugins/harmony-plugin-git/                       ← 新专用插件（dual-fac
 - **沙箱边界**（§2.2，如实声明）：git 仓内部写入不经 `fs-sandbox.checkedTarget`；围栏收窄为「仓库根」单点，与 exec 同级且比它更严（FR-4.5）。
 - **日志规范**（§3.3）：诊断走 `[dsh-harmony]` 前缀；**凭据明文绝不进日志**。
 - **产物适配集中在收集脚本**（§5.3）：依赖物化全部在 `collect-dsh.mjs`。
-- **幂等构建**（§5.1）：`collectGitRuntime()` 目标已有 `package.json` 即走快路径，但仍执行产物断言。
+- **幂等构建**（§5.1）：`collectGitRuntime()` 目标已有 `package.json` 即走快路径，但仍执行产物断言；**注意**正常构建每次先删 `distDir`，快路径在常规链路不可达，只能靠单独二次调用验证。
 - **提交前缀**：提交一律用 Conventional Commits 前缀，不加 AI 署名。
 - **已知限制**：
   - **L1 `rebase` 不支持**：工具明确报「本平台不支持」，不静默用 merge 冒充。
   - **L2 SSH 不可用**：只能 HTTPS 用户名 / 密码；`git@host:path` 与 `ssh://` 被改写为 `https://`（丢弃用户名）。
-  - **L3 依赖体积**：`dsh-dist` 增加约 9 MB（闭包 8.6 MB + jsdiff 0.8 MB）。
+  - **L3 依赖体积**：`dsh-dist` 增加约 8.6 MB（**只有** isomorphic-git 闭包；jsdiff 复用宿主闭包，零增量）。
   - **L4 纯 JS 性能**：clone 大仓库明显慢于原生 git；用 `depth` / `singleBranch` / `noTags` 缓解，但不改变量级。
   - **L5 围栏粒度**：git 仓内部写入不经逐次 `fs-sandbox.checkedTarget`。
   - **L6 凭据页无法枚举**：host 清单由 `localStorage` 记忆，页面提示该限制。
@@ -315,7 +315,7 @@ plugins/harmony-plugin-git/                       ← 新专用插件（dual-fac
 | **有意例外** | 本模块不走 `HARMONY_ENSURED_PRESET_ROWS`、改挂 host 平面单行的做法；因为设置页的 `dsh.client` 只在 host Loader entries 上被扫描（FR-2.2） |
 | **仓库根 chroot 适配器** | 插件内以 `node:fs/promises` 实现的 git fs 契约适配层：仓库根为唯一允许域，逐路径前缀校验，越界即拒（FR-4.1 / FR-4.2） |
 | **仓库根围栏** | 围栏决策点是仓库根（单点），而非每次文件操作；git 仓内部写入不再逐次经 `fs-sandbox`（FR-4.5） |
-| **依赖物化 / 嵌套落位** | 把 isomorphic-git 及其依赖闭包复制到 `dsh-dist/node_modules/isomorphic-git/node_modules/`（而非顶层），使其解析优先命中自带闭包、不干扰 dsh 的扁平依赖树（FR-8.4） |
+| **依赖物化 / 嵌套落位** | 把 isomorphic-git 及其依赖闭包复制到**插件自己**的 `dsh-dist/node_modules/harmony-plugin-git/node_modules/`（而非 dsh 顶层）：让闭包随 `ensureDshPluginsProfileLink()` 的整目录复制一起进入 `$DSH_HOME/profiles/node_modules/`，且解析优先命中自带闭包、不干扰 dsh 的扁平依赖树（FR-8.4）。jsdiff 不在物化清单内 —— 复用宿主闭包 |
 | **dual-face 插件** | 同一 npm 包同时提供 host 面（`./lib/index.js`）与 client 面（`./lib/client.js`）两个入口的插件 |
 | **credentialRef** | 凭据库中的键名（POSIX 标识符）；客户端可达的凭据 API 只认 ref，不暴露 record，也不能枚举 |
 | **提权审批（escalation）** | 越界写入被拒后，模型带 `sandbox_permissions` + `justification` 申请**一次性**更宽模式，经用户审批后该次调用在批准的根下执行 |

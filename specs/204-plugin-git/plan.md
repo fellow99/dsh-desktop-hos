@@ -11,9 +11,9 @@
 ### 1.1 运行时环境
 
 - **构建期**：Windows 宿主机 Node（`node scripts/*.mjs`）；依赖物化在 `collect-dsh.mjs`（内含一次幂等的 npm/pnpm 拉取）；HAP 打包由 hvigor（DevEco 工具链）承担。
-- **运行期**：Electron-on-鸿蒙（Electron 37 / Node 22.17.0）主进程内的 dsh Host。插件是 in-process Cordis 插件，不独立成进程；isomorphic-git 与 jsdiff 都是纯 JS，在主进程内动态 `import`。
+- **运行期**：Electron-on-鸿蒙（Electron 37 / Node 22.17.0）主进程内的 dsh Host。插件是 in-process Cordis 插件，不独立成进程；isomorphic-git（插件内嵌套闭包）与 jsdiff（宿主闭包）都是纯 JS，在主进程内动态 `import`。
 - **设备现状**：设备**无 `git`**（toybox 不提供，`git:` 源也装不了）；设备在线、网络可达外网；应用已安装；主进程已带 `--inspect`（9229）。
-- **部署形态**：插件源码 → `dsh-dist/node_modules/harmony-plugin-git/` + `dsh-dist/node_modules/isomorphic-git[/node_modules]/` + `dsh-dist/node_modules/diff` → `dsh-dist.tar.gz` → resfile → 首启解压到 `$DSH_HOME/dsh-dist` → 运行期镜像到 `$DSH_HOME/profiles/node_modules/`。
+- **部署形态**：插件源码 → `dsh-dist/node_modules/harmony-plugin-git/`（自带 `node_modules/isomorphic-git` 与它自己的整棵依赖闭包）→ `dsh-dist.tar.gz` → resfile → 首启解压到 `$DSH_HOME/dsh-dist` → 运行期把插件目录**整目录**镜像到 `$DSH_HOME/profiles/node_modules/`（闭包随之过去）。`diff` 不占任何落位：由宿主闭包提供（§1.3）。
 - **父工程改动 = 0**（D8）；ArkTS 侧零改动；不新增任何 dsh 补丁。
 
 ### 1.2 本机工具链与构建前置（实测事实，对应设计文档 §19 R12）
@@ -27,7 +27,7 @@
 | 3 | **装机前必须清设备 `$DSH_HOME/dsh-dist`** | `ensureDshExtracted()` 只比对解压 marker，**marker 命中即跳过解压** → 不清就会继续跑旧产物（旧插件副本、旧依赖、旧 profile 行）。这是本模块最易踩的坑 |
 | 4 | 签名材料已入位（2026-10-16） | `~/.ohos/config/` 下的 `default_….{cer,p12,p7b}` 三件套；`p7b` 的 `bundle-name` 与 `allowed-acls`（含 `ALLOW_WRITABLE_CODE_MEMORY`）已核对；`build-profile.json5` 内联 `signingConfigs`，`hvigorfile.ts` 在**无本地签名文件时不覆盖**它，故直接生效 |
 | 5 | 交付形态全链已实测通过 | `collect-runtime` → `build-dsh` → `collect-dsh` → `tar`（286 MB 基线）→ `scripts/build-debug.ps1` = `BUILD SUCCESSFUL` + 签名 HAP 492.4 MB + 签名自检一致；`hdc app install -r` 成功 |
-| 6 | `collect-dsh.mjs` **已有 dsh-market 版本断言** | `assertDshMarketVersion()`（`DSH_MARKET_VERSION = '1.66.7'`，不符即 `process.exit(1)`）；`collectGitRuntime()` 的版本断言照此形状（同文件另有 `assertPnpmEngineArtifact()` / `PNPM_VERSION = '10.34.6'` 先例） |
+| 6 | `collect-dsh.mjs` **已有 dsh-market 版本断言** | `assertDshMarketVersion()`（`DSH_MARKET_VERSION = '1.66.7'`，不符即 `process.exit(1)`）；`collectGitRuntime()` 的版本断言照此形状，但**失败是抛错**而非 `process.exit(1)`（见 §4.2），同文件另有 `assertPnpmEngineArtifact()` / `PNPM_VERSION = '10.34.6'` 先例 |
 | 7 | **注入 harness 不是交付形态** | 直接把插件写进设备 `$DSH_HOME/dsh-dist` 只用于提前验证行为（R2 由此路径通过）；最终仍须经 `collectGitRuntime()` + `collectPlugins()` + tar + 签名出包，否则包内不含插件、重装即失效 |
 
 ### 1.3 依赖
@@ -41,11 +41,11 @@
 | `@deepseek-ai/dsh-credentials` | 同上 | 凭据库读取（`ctx.credentials.resolve`） |
 | `@deepseek-ai/schemastery` | 同上 | `Config` schema |
 | `isomorphic-git@1.44.2`（+ `isomorphic-git/http/node`） | `collectGitRuntime()` 物化 | git 原语实现 |
-| `diff@8.0.2`（jsdiff） | `collectGitRuntime()` 物化 | unified diff（零依赖） |
+| `diff ^9.0.0`（jsdiff） | 宿主 `dsh-dist/node_modules`（插件 `peerDependencies`；`collectGitRuntime()` **不**物化） | unified diff（复用宿主闭包） |
 | `node:fs/promises` | Node 内置 | 仓库根 chroot 适配器的落盘层 |
 | `remote.credentials`（client 面） | 宿主设置面既有 API | 凭据设置页读写 |
 
-> 插件为纯 ESM、**无构建步骤**（`lib/` 即发布源码）、`private: true`、不发布到 registry。`isomorphic-git` 与 jsdiff **不**写进 `peerDependencies`（它们不是宿主提供的），而由构建期物化落到 `dsh-dist/node_modules/`。
+> 插件为纯 ESM、**无构建步骤**（`lib/` 即发布源码）、`private: true`、不发布到 registry。`isomorphic-git` **不**写进 `peerDependencies`（它不是宿主提供的），由构建期物化落到**插件自己的** `node_modules/`（`dsh-dist/node_modules/harmony-plugin-git/node_modules/`）；`diff` 相反 —— 它由宿主提供，写进 `peerDependencies`（`^9.0.0`）并直接复用宿主闭包，插件一份都不发。
 
 ## 2. 宪法合规检查
 
@@ -78,7 +78,7 @@
 | 5 | profile 行 `id` | 同上 | `git`（稳定身份，不随包名变化） |
 | 6 | client 面入口 | `package.json` 的 `exports["./client"]` | `./lib/client.js` |
 | 7 | 设置页 section id | `lib/client.js` | `git-credentials` |
-| 8 | 依赖落位 | `dsh-dist/node_modules/…` | `isomorphic-git/` + `isomorphic-git/node_modules/` + `diff` |
+| 8 | 依赖落位 | `dsh-dist/node_modules/harmony-plugin-git/node_modules/…` | `isomorphic-git/` + 整棵依赖闭包（`diff` 不在此列：复用宿主闭包） |
 
 **与 202/203 的关键差异**：本插件**不**写 `HARMONY_ENSURED_PRESET_ROWS`（两处都不写），因此
 
@@ -96,11 +96,11 @@
 |---|---|---|
 | `package.json` | `name` / `private` / `type: module` / `main` / `exports`（含 `./client`）/ `dsh.client { platform: "web", inject: [...] }` / `peerDependencies` | FR-1.1、FR-1.2、FR-6.1 |
 | `lib/index.js` | host 面入口：命名导出 `name` / `inject` / `Config` / `apply`（无 default export）；`apply` 装配 runtime → fence → fs-adapter → 21 个工具 | FR-1.3、FR-3、FR-10 |
-| `lib/runtime.js` | isomorphic-git 与 jsdiff 的动态 `import` + 版本断言（与脚本 pin 一致） | FR-8.2 |
+| `lib/runtime.js` | isomorphic-git（精确版本与脚本 pin 一致）与 jsdiff（**宿主闭包**：只断言 `SUPPORTED_JSDIFF_MAJOR = 9` 与入口 `createTwoFilesPatch`，版本读不出来时警告而不失败）的动态 `import` + 版本断言 | FR-8.2 |
 | `lib/fence.js` | 仓库根解析（`ctx.fs.resolve` → `processPath`）+ chroot 校验 + 提权决议（对齐 `FsMutationSandbox`：`sandboxDenialMarker` / `escalationHintMarker` / `ESCALATION_TARGETS` / `approveEscalation`） | FR-4 |
 | `lib/fs-adapter.js` | isomorphic-git 的 fs 契约 → `node:fs/promises`，**逐路径** `join` + `normalize` + 前缀包含校验，越界即拒 | FR-4.1、FR-4.2 |
 | `lib/auth.js` | key 名规整（`GIT_CREDENTIAL_<HOST>`）→ `ctx.credentials.resolve(ref)` → `onAuth` / `onAuthFailure`；缺凭据时的引导文案；`onAuthFailure` 最多重试 1 次 | FR-5.1、FR-5.2、FR-5.3 |
-| `lib/diff.js` | jsdiff 封装：unified diff / `stat` 汇总 / 二进制（含 NUL）判定 | FR-7.2 |
+| `lib/diff.js` | **宿主闭包** jsdiff 封装：unified diff / `stat` 汇总 / 二进制（含 NUL）判定 | FR-7.2 |
 | `lib/report.js` | 输出渲染：status 矩阵、提交摘要、冲突列表、错误归因文案 | FR-3、FR-9 |
 | `lib/tools/*.js` | **21 个工具，一文件一工具**；写类工具带 `sandbox_permissions` + `justification`；全部经 `defineTool` 产出 | FR-3.1、FR-3.2、FR-3.3 |
 | `lib/tools/git_{diff,show,revert}.js` | 三个自建能力的工具面（算法在 `lib/diff.js` 与工具内） | FR-7.1、FR-7.2、FR-7.3 |
@@ -112,8 +112,8 @@
 
 | 位置（符号） | 职责 |
 |---|---|
-| `ISOMORPHIC_GIT_VERSION = '1.44.2'` / `JSDIFF_VERSION = '8.0.2'` | 版本 pin 常量（对齐既有 `DSH_MARKET_VERSION` / `PNPM_VERSION` 先例） |
-| `collectGitRuntime()` | staging 里 `pnpm add isomorphic-git@… diff@… --config.node-linker=hoisted --ignore-scripts`；isomorphic-git 及其整棵闭包复制到 `dsh-dist/node_modules/isomorphic-git/node_modules/`；`diff` 落顶层 `dsh-dist/node_modules/diff`；断言入口非空 + 版本与 pin 一致；幂等（目标已有 `package.json` 即走快路径，**快路径同样跑断言**）；`finally` 里清 staging |
+| `ISOMORPHIC_GIT_VERSION = '1.44.2'` | **唯一**的版本 pin 常量（对齐既有 `DSH_MARKET_VERSION` / `PNPM_VERSION` 先例）；jsdiff **不 pin** —— 它复用宿主闭包，插件侧只以 `SUPPORTED_JSDIFF_MAJOR = 9` 守 major |
+| `collectGitRuntime()` | staging 里 `pnpm add isomorphic-git@… --config.node-linker=hoisted --ignore-scripts`（**不含** `diff`）；isomorphic-git 及其整棵闭包复制到**插件自己**的 `dsh-dist/node_modules/harmony-plugin-git/node_modules/`（该目录在插件目录内部，故运行期镜像时随整目录一起过去）；断言入口非空 + 版本与 pin 一致；幂等（目标已有 `package.json` 即走快路径，**快路径同样跑断言** —— 但正常构建每次先删 `distDir`，快路径在常规链路不可达）；失败**抛错**而非 `process.exit(1)`（否则跳过 `finally` 的 staging 清理），终止进程由调用点 `try/catch` 负责；`finally` 里清 staging |
 | `collectGitRuntime()` 的调用点 | 与 `collectPlugins()` / `collectMarketPNPM()` 同段（现有末尾调用区），保证在 dsh 自身的 `pnpm deploy`、`.pnpm` 清理、非目标架构 prebuilds 剪裁**之后**执行 |
 | `collectPlugins()` | **不改**：`harmony-plugin-*` 通配自动发现本插件并物化到 `dsh-dist/node_modules/harmony-plugin-git/`（排除 `node_modules`，故插件不能自带依赖 —— 这正是 `collectGitRuntime()` 存在的理由） |
 | `assertPresetRowsMirrorMainJs()` | **不涉及**本插件（本插件不进 preset 表） |
@@ -145,9 +145,9 @@
   dsh-dist/node_modules/harmony-plugin-git/            （gitignored）
         │ collectGitRuntime()  一次 pnpm 拉取（幂等）
         ▼
-  dsh-dist/node_modules/isomorphic-git/                ← http/node 入口
-  dsh-dist/node_modules/isomorphic-git/node_modules/   ← 整棵依赖闭包（55 包 / 8.6 MB）
-  dsh-dist/node_modules/diff/                          ← jsdiff（零依赖 / 800 KB）
+  dsh-dist/node_modules/harmony-plugin-git/node_modules/isomorphic-git/  ← http/node 入口
+  dsh-dist/node_modules/harmony-plugin-git/node_modules/                 ← 整棵依赖闭包（55 包 / 8.6 MB）
+  （jsdiff 不物化：由宿主闭包提供，解析到 dsh-dist/node_modules/diff@9.0.0）
         │ collect-dsh.mjs 阶段 8：profiles/desktop → dsh-dist/profiles/desktop
         ▼
   dsh-dist.tar.gz ──► web_engine/.../resfile/resources/app/dsh-dist.tar.gz
@@ -185,7 +185,7 @@
 设备只有在**重新解压 `dsh-dist`** 后才会看到新的插件与依赖集合：
 
 1. `ensureDshExtracted()` 只比对解压 marker，不比对版本或内容 hash；新旧 tar 都含该 marker → **命中即跳过**。
-2. **就地升级**（覆盖安装 / `hdc app install -r`、保留 `$DSH_HOME/dsh-dist`）因此不会重解压，设备继续用**旧** `dsh-dist` 里烘焙的旧 profile 行与旧插件 / 旧依赖副本 —— 本模块新增的 `isomorphic-git` / `diff` 都不会出现，插件 `apply()` 的版本断言会失败或工具全不可用。
+2. **就地升级**（覆盖安装 / `hdc app install -r`、保留 `$DSH_HOME/dsh-dist`）因此不会重解压，设备继续用**旧** `dsh-dist` 里烘焙的旧 profile 行与旧插件 / 旧依赖副本 —— 本模块新增的 isomorphic-git 闭包（在插件自己的 `node_modules/` 内）不会出现，插件 `apply()` 的版本断言会失败或工具全不可用（`diff` 来自宿主闭包，不受本模块影响）。
 3. 本模块**不改** `ensurePresetRows()` 相关语义（本插件不进 preset 表），故该既有缺口不影响本模块；但 `ensureDshPluginsProfileLink()` 的「源集合为空时不复制也不清理」提前返回仍是**安全属性**，不得「修正」。
 
 **操作要求（强制）**：装机前**必须清设备 `$DSH_HOME/dsh-dist`**（同时清 `$DSH_HOME/profiles/node_modules/` 下的同族陈旧副本只由启动期镜像自动完成）。这是本模块构建—装机流程里的**固定一步**，写进 tasks.md（T22）与 test-cases.md（TC-B6）。
@@ -235,12 +235,12 @@
 | D6 | 带账号仓库写权限 = **完整读写，含默认分支** | 只允许测试分支 | 评审裁决保留；副作用（R4）如实登记并在执行前点名 |
 | D7 | **专用插件** `dsh-desktop-hos/plugins/harmony-plugin-git/` | 放进父工程通用目录 | 依赖本壳运行期适配（工具注册面、profile、sandbox 链路），不满足通用插件判定标准 |
 | D8 | 父工程改动 = **0** | 改父工程 | 全部工作在本工程内闭合 |
-| D9 | `diff` 缺口 = **引入 jsdiff**（零依赖纯 JS） | 自研 diff | 零依赖、体积 800 KB；自研等于重写 Myers 与补丁格式化 |
+| D9 | `diff` 缺口 = **复用宿主闭包里的 jsdiff**（插件只在 `peerDependencies` 声明 `diff ^9.0.0`，**不物化**） | 自研 diff / 插件自行物化 jsdiff | 宿主本就带 `diff ^9.0.0`（`dsh-tool-fs` / `dsh-workspace-changes` / `dsh-client-ui-trajectory` / `dsh-client-ui-primitives` 声明），`app-boot` 的 profile resolution 把裸包名请求路由进宿主闭包（设备实测解析到 `dsh-dist/node_modules/diff@9.0.0`）⇒ 零体积增量，且不存在「本插件的 diff 覆盖 dsh 自身 diff」的冲突面；自研等于重写 Myers 与补丁格式化 |
 | D10 | 依赖供给 + 文件访问 = **嵌套依赖物化 + 仓库根 chroot 适配器**（方案 A） | B 扩 `ctx.fs` seam（需 5~6 个新补丁、逐次 `resolve` 含 realpath + 围栏判定、适配 `FsTarget` 身份 / `FsWriteIntent` 版本守卫）；C 插件内 vendored 单文件 bundle（生成物入库，违反「纯 ESM 无构建步骤」） | B 被补丁链上下文约束与性能/适配成本双重否决；C 违反插件约定且升级要手工重打。A 上游改动 0、新增补丁 0、围栏单点、chroot 内直连 `node:fs` |
 | D11 | 挂载平面 = **host 平面单行** | 沿用 `HARMONY_ENSURED_PRESET_ROWS` | `dsh.client` 只从 host Loader entries 扫描（preset 行扫不到），而 host 平面注册的工具对 agent 可见（`restrict()` 需 scoped context，全库仅两处调用，preset 不做 restrict）→ 一行两全。**这是对 §二.7 的有意例外**，须原位登记 |
 | D12 | 工具粒度 = **一动词一工具（21 个）** | 单 `git` 工具 + `command` 枚举 | 与工程惯例一致（一工具一职责）；模型按名选工具 + 精确 schema 更可靠；**可独立验收**（一个工具一组测试用例，直接支撑 AC-13） |
 | D13 | HTTP 客户端 = **`isomorphic-git/http/node`** | `http/web`（全局 `fetch`，依赖 55 → 12 包 / 6.3 MB） | Node 路径是官方推荐路径，POST/chunked 行为更可预期；体积差异不值得承担 `fetch` + 流式请求体（`duplex: 'half'`）的不确定性 |
-| D14 | jsdiff **不裁剪**（保留 55 包 / 8.6 MB） | 裁 `index.cjs` + `index.umd.min.js` + map（约省 3.6 MB） | 裁剪第三方包内容属额外维护面 |
+| D14 | 物化产物**不裁剪**（保留 isomorphic-git 闭包 55 包 / 8.6 MB；jsdiff 不进产物，直接复用宿主闭包） | 裁 `index.cjs` + `index.umd.min.js` + map（约省 3.6 MB） | 裁剪第三方包内容属额外维护面 |
 | D15 | 身份默认值 = `{ name: 'yourname', email: 'yourname@somehost' }` | 真实个人信息 | 刻意使用明显占位值；身份不是密钥，不进凭据库，由 `git_config` 写仓库本地配置 |
 
 ## 10. 待确认

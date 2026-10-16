@@ -24,7 +24,7 @@
 | 装机前置 | **必须清设备 `$DSH_HOME/dsh-dist`**：`ensureDshExtracted()` 只比对解压 marker，命中即跳过解压 → 否则继续跑旧产物 |
 | 回归基线 | 既有 `dshmarket` 版本 pin `1.66.7`（`assertDshMarketVersion()`）仍须在 `collect-dsh` 阶段通过 |
 
-> **本组用例的首要目的**：验证插件在**构建期**与**运行期**两个真实链路上都闭合，而不是只验证源码里的字符串写对了。原因：① `isomorphic-git` / jsdiff 是**构建期物化的依赖**，源里有 import 不代表产物里有包；② 本插件的工具是 **host 平面全局注册**，注册失败时宿主不记 `__hostError`，从 inspector 侧表现为「插件毫无痕迹、工具表为空」；③ 设置页是 client 面交付物，只有 host 平面挂载才能被扫描。
+> **本组用例的首要目的**：验证插件在**构建期**与**运行期**两个真实链路上都闭合，而不是只验证源码里的字符串写对了。原因：① `isomorphic-git` 是**构建期物化到插件自己 `node_modules/` 的依赖**，而 `diff` 由宿主闭包提供 —— 源里有 import 不代表产物里有包，两者的落位必须分别核对；② 本插件的工具是 **host 平面全局注册**，注册失败时宿主不记 `__hostError`，从 inspector 侧表现为「插件毫无痕迹、工具表为空」；③ 设置页是 client 面交付物，只有 host 平面挂载才能被扫描。
 
 > **脱敏**：本文档不写入任何真实仓库地址、主机名 / 内网域名、账号名、口令、设备序列号与应用包名。示例一律用 RFC 2606 保留域名（`git.example.com`）与占位符。
 
@@ -47,30 +47,30 @@
 
 | 项 | 内容 |
 |---|---|
-| 目的 | 落实 AC-11：依赖物化成功、落位正确、版本与 pin 一致、重复执行走快路径仍断言 |
-| 步骤 | 1. `node scripts/collect-dsh.mjs`（首次）<br>2. 断言存在：`dsh-dist/node_modules/isomorphic-git/package.json`、`dsh-dist/node_modules/isomorphic-git/node_modules/`（非空目录）、`dsh-dist/node_modules/diff/package.json`<br>3. 读三处 `version`：`isomorphic-git` == `1.44.2`、`diff` == `8.0.2`；断言 `isomorphic-git/http/node` 入口文件非空<br>4. 再跑一次 `node scripts/collect-dsh.mjs`，观察快路径日志仍执行版本断言 |
-| 期望 | 步骤 2 三项全部存在；步骤 3 版本与 pin 一致、入口非空；步骤 4 幂等（不重复拉取）且断言仍跑；闭包规模约 55 包 / 8.6 MB |
-| 证据 | 目录清单 + 三个 `version` 字段 + 两次运行日志 |
-| 失败含义 | 落位错 ⇒ `lib/runtime.js` 的动态 import 在设备上解析失败；版本不符未被拦 ⇒ 版本漂移会静默进入产物（R6） |
-| 备注 | 刻意把版本断言放在**快路径**同样执行：若只在首次物化时断言，改 pin 后重跑不会暴露不一致（既有 `assertPnpmEngineArtifact()` 亦如此） |
+| 目的 | 落实 AC-11：依赖物化成功、落位正确（**插件自己的** `node_modules/`）、版本与 pin 一致；并**如实核对**幂等路径的可达性 |
+| 步骤 | 1. `node scripts/collect-dsh.mjs`（首次）<br>2. 断言存在：`dsh-dist/node_modules/harmony-plugin-git/node_modules/isomorphic-git/package.json`、同层的 `node_modules/`（非空目录）、`isomorphic-git/http/node/index.js` 入口非空<br>3. 读版本：`isomorphic-git` == `1.44.2`；顶层 `dsh-dist/node_modules/diff/package.json` 的 `version` == `9.0.0`（**宿主闭包**，非本模块物化），且插件的 `node_modules/` 内**不出现** `diff`<br>4. 幂等验证：正常构建第 1 步已先删 `distDir`，故快路径在常规链路不可达 —— 需**单独二次调用** `collectGitRuntime()`（或等价方式）观察快路径仍执行版本断言 |
+| 期望 | 步骤 2 各项全部存在且入口非空；步骤 3 版本与 pin 一致、插件内无 `diff`、顶层 `diff` 仍是宿主的 `9.0.0`；步骤 4 在单独二次调用下走快路径（不重复拉取）且断言仍跑；闭包规模约 55 包 / 8.6 MB |
+| 证据 | 目录清单 + 两个 `version` 字段 + 一次完整构建日志 + 一次单独二次调用日志 |
+| 失败含义 | 落位错 ⇒ `lib/runtime.js` 的动态 import 在设备上解析失败；版本不符未被拦 ⇒ 版本漂移会静默进入产物（R6）；插件内出现 `diff` ⇒ 又发了第二份 jsdiff（与宿主同名包形成遮蔽面） |
+| 备注 | 刻意把版本断言放在**快路径**同样执行：若只在首次物化时断言，改 pin 后重跑不会暴露不一致（既有 `assertPnpmEngineArtifact()` 亦如此）。但**快路径在常规构建链路不可达**（完整构建会先删 `distDir`），故不得把「跑过一遍 collect-dsh 且成功」当作幂等已验证 |
 
 ### TC-B3 —— isomorphic-git 依赖闭包**不覆盖** dsh 顶层同名包（嵌套成立）
 
 | 项 | 内容 |
 |---|---|
 | 目的 | 落实 AC-12：嵌套落位的关键——isomorphic-git 的依赖绝不覆盖或冲突 dsh 自己的扁平依赖树 |
-| 步骤 | 1. 物化前记录顶层 `dsh-dist/node_modules/<pkg>/package.json` 的 `version`（对以下实际存在的同名包逐个记录：`buffer@5.7.1`、`readable-stream@2.3.8`、`pako@0.2.9`、`simple-get@4.0.1`、`ignore@5.3.2`）<br>2. 跑 `node scripts/collect-dsh.mjs`<br>3. 逐个复读顶层同名包的 `version` 与 `collect` 前比对<br>4. 断言 isomorphic-git 的 11 个 external 依赖（`async-lock` / `clean-git-ref` / `crc-32` / `diff3` / `ignore` / `minimisted` / `pako` / `pify` / `readable-stream` / `sha.js` / `simple-get`）都存在于 `dsh-dist/node_modules/isomorphic-git/node_modules/` 下 |
-| 期望 | 步骤 3 顶层版本**逐一致**（未被覆盖）；步骤 4 嵌套层齐备 |
+| 步骤 | 1. 物化前记录顶层 `dsh-dist/node_modules/<pkg>/package.json` 的 `version`（对以下实际存在的同名包逐个记录：`buffer@5.7.1`、`readable-stream@2.3.8`、`pako@0.2.9`、`simple-get@4.0.1`、`ignore@5.3.2`，以及宿主闭包的 `diff@9.0.0`）<br>2. 跑 `node scripts/collect-dsh.mjs`<br>3. 逐个复读顶层同名包的 `version` 与 `collect` 前比对<br>4. 断言 isomorphic-git 的 11 个 external 依赖（`async-lock` / `clean-git-ref` / `crc-32` / `diff3` / `ignore` / `minimisted` / `pako` / `pify` / `readable-stream` / `sha.js` / `simple-get`）都存在于 `dsh-dist/node_modules/harmony-plugin-git/node_modules/` 下<br>5. 断言 `dsh-dist/node_modules/harmony-plugin-git/node_modules/` 内**不出现** `diff`，且顶层 `dsh-dist/node_modules/diff` 仍是宿主的 `9.0.0` |
+| 期望 | 步骤 3 顶层版本**逐一致**（未被覆盖）；步骤 4 嵌套层齐备；步骤 5 全库只有宿主那一份 `diff@9.0.0` |
 | 证据 | 顶层版本比对表 + 嵌套层目录清单 |
 | 失败含义 | 嵌套失效 ⇒ 覆盖 dsh 自身依赖，可能连带破坏 `dsh-tool-fs` / `dsh-client-ui-*` 等既有功能（症状与 git 无关，极难定位） |
-| 观察项 | dsh 自身已有顶层 `diff@9.0.0` 依赖（`dsh-tool-fs`、`dsh-workspace-changes`、`dsh-client-ui-trajectory`、`dsh-client-ui-primitives` 声明 `"diff": "^9.0.0"`），而本模块的 jsdiff pin 为 `8.0.2` 且设计上落**顶层** `node_modules/diff`。本用例的步骤 3 因此**同时**覆盖 `diff`：物化后顶层 `dsh-dist/node_modules/diff/package.json` 的版本必须与物化前一致（`9.0.0`）。若出现不一致，即为「jsdiff 覆盖了 dsh 自身的 `diff`」这一冲突态的**直接证据**，不得视为通过 |
+| 观察项 | dsh 自身顶层已有 `diff@9.0.0` 依赖（`dsh-tool-fs`、`dsh-workspace-changes`、`dsh-client-ui-trajectory`、`dsh-client-ui-primitives` 声明 `"diff": "^9.0.0"`）。**本模块根本不发 `diff`**：插件只在 `peerDependencies` 声明 `diff ^9.0.0`，运行期由宿主闭包提供（`app-boot` 的 profile resolution 把插件裸包名请求路由进宿主闭包）。因此步骤 3 / 5 必须**同时**确认两点：① 物化后顶层 `dsh-dist/node_modules/diff/package.json` 的版本仍与物化前一致（`9.0.0`）；② `dsh-dist/node_modules/harmony-plugin-git/node_modules/` 内**不出现** `diff`。二者任一不成立都不得视为通过 —— 出现第二份才是「本插件的 diff 覆盖 dsh 自身 diff」这一冲突态的**直接证据** |
 
 ### TC-B4 —— profile host 行随包（产物内与设备侧均生效）
 
 | 项 | 内容 |
 |---|---|
 | 目的 | 验证 host 行的**装配链**完整：`profiles/desktop` → `dsh-dist/profiles/desktop` → 设备 `$DSH_HOME/profiles/desktop` |
-| 步骤 | 1. `collect-dsh` 后 `grep -n -A2 "insert" dsh-dist/profiles/desktop/cordis.patch.yml`，核对 `- id: git` / `name: harmony-plugin-git`<br>2. 清设备 `$DSH_HOME/dsh-dist` 后重启应用，读设备 `$DSH_HOME/profiles/desktop/cordis.patch.yml`（经 CDP 读文件），核对同一行存在且为最新版<br>3. 核对设备 `$DSH_HOME/profiles/node_modules/harmony-plugin-git/package.json` 存在（`ensureDshPluginsProfileLink()` 镜像结果）<br>4. `hilog \| grep dsh-harmony` 应含「已复制 harmony-plugin-git → profiles/node_modules」 |
+| 步骤 | 1. `collect-dsh` 后 `grep -n -A2 "insert" dsh-dist/profiles/desktop/cordis.patch.yml`，核对 `- id: git` / `name: harmony-plugin-git`<br>2. 清设备 `$DSH_HOME/dsh-dist` 后重启应用，读设备 `$DSH_HOME/profiles/desktop/cordis.patch.yml`（经 CDP 读文件），核对同一行存在且为最新版<br>3. 核对设备 `$DSH_HOME/profiles/node_modules/harmony-plugin-git/package.json` 存在（`ensureDshPluginsProfileLink()` 镜像结果），且镜像目录内自带 `node_modules/isomorphic-git/package.json`（整目录复制把嵌套闭包一起带上 —— 这正是闭包落在插件目录内部的原因）<br>4. `hilog \| grep dsh-harmony` 应含「已复制 harmony-plugin-git → profiles/node_modules」 |
 | 期望 | 三处均命中；行 `id: git`、`name: harmony-plugin-git`；镜像目录存在 |
 | 证据 | 两处文件片段 + 目录存在性 + hilog 片段 |
 | 失败含义 | 步骤 1 失败 ⇒ 行未随包；步骤 3 失败 ⇒ 运行期解析不到裸包名（行激活失败，工具与设置页全部缺失） |
@@ -92,7 +92,7 @@
 | 项 | 内容 |
 |---|---|
 | 目的 | 消除「命令成功但跑的是旧产物」这一无诊断信息的失败态（解压 marker 命中即跳过） |
-| 步骤 | 1. 记录清空前的 `$DSH_HOME/dsh-dist/node_modules/` 是否含 `harmony-plugin-git` 与 `isomorphic-git`<br>2. 删除设备 `$DSH_HOME/dsh-dist`（整个目录）<br>3. `hdc app install -r <签名 HAP>`，启动应用<br>4. 复核 `$DSH_HOME/dsh-dist/node_modules/isomorphic-git/node_modules/` 已按新 tar 落位 |
+| 步骤 | 1. 记录清空前的 `$DSH_HOME/dsh-dist/node_modules/` 是否含 `harmony-plugin-git`（其自带 `node_modules/isomorphic-git` 整棵闭包随之）<br>2. 删除设备 `$DSH_HOME/dsh-dist`（整个目录）<br>3. `hdc app install -r <签名 HAP>`，启动应用<br>4. 复核 `$DSH_HOME/dsh-dist/node_modules/harmony-plugin-git/node_modules/isomorphic-git/` 与镜像后的 `$DSH_HOME/profiles/node_modules/harmony-plugin-git/node_modules/isomorphic-git/` 均已按新 tar 落位 |
 | 期望 | 步骤 4 新产物就位；`hilog` 出现解压与复制日志 |
 | 证据 | 清空前 / 后目录清单 + 安装与启动日志 |
 | 失败含义 | 不清 `dsh-dist` ⇒ 设备继续用旧插件副本与旧依赖运行，本模块的**全部**验收结论都不可信 |
@@ -393,8 +393,8 @@
 | AC-8 凭据明文不出现在对话 / hilog / cordis.yml | TC-D5 |
 | AC-9 `rebase` 明确报「本平台不支持」，不静默降级 | TC-D10 |
 | AC-10 `revert` 工作区分叉时 fail-closed 并列出冲突路径 | TC-D11 |
-| AC-11 `collectGitRuntime()` 物化成功且幂等；嵌套目录存在 | TC-B2、TC-B6 |
-| AC-12 依赖不覆盖 dsh 顶层同名包（嵌套成立） | TC-B3 |
+| AC-11 `collectGitRuntime()` 物化成功（幂等须单独二次调用验证）；插件内嵌套目录存在 | TC-B2、TC-B6 |
+| AC-12 依赖不覆盖 dsh 顶层同名包（嵌套成立）；顶层 `diff` 仍是宿主 `9.0.0`，插件内无 `diff` | TC-B3 |
 | AC-13 工具面 21 个相对 18 个的覆盖缺口已补齐 | TC-D13（AN-17 / AN-18 / AN-19）+ 本文档 §4.1 覆盖说明 |
 | AC-14 `git_config` 身份链成立 | TC-D14（AN-20 + AN-21） |
 | （构建期 / 装配支撑，无独立 AC） | TC-B1、TC-B4、TC-B5 |

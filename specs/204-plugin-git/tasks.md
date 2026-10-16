@@ -12,11 +12,11 @@
 |---|---|---|---|---|
 | T1 | 插件包骨架：`package.json`（`name` / `private` / `type` / `main` / `exports` 含 `./client` / `dsh.client` / `peerDependencies`） | `plugins/harmony-plugin-git/package.json` | — | 包名与声明校验通过（FR-1.1、FR-1.2） |
 | T2 | host 面入口：命名导出 `name` / `inject` / `Config` / `apply`（无 default export） | `lib/index.js` | T1 | Loader 保留 `inject`；`Config` 含身份占位默认值（FR-1.3、FR-10） |
-| T3 | 运行时装载：isomorphic-git 与 jsdiff 动态 `import` + 版本断言（与脚本 pin 一致） | `lib/runtime.js` | T2 | 版本不符即明确报错，不静默降级（FR-8.2） |
+| T3 | 运行时装载：isomorphic-git（插件内嵌套闭包，pin `1.44.2`）与 jsdiff（**宿主闭包**，不物化）动态 `import`；断言 isomorphic-git 精确版本、jsdiff 只断言 major（`SUPPORTED_JSDIFF_MAJOR = 9`）与入口 `createTwoFilesPatch` 存在 —— 版本清单读不出来时警告而不失败 | `lib/runtime.js` | T2 | major 不符 / 入口缺失即明确报错，不静默降级（FR-8.2） |
 | T4 | 仓库根围栏：`ctx.fs.resolve` → `processPath` + chroot 校验 + 提权决议（对齐 `FsMutationSandbox`） | `lib/fence.js` | T2 | 越界抛 `FS_SANDBOX_DENIED` + 共享 marker/提示（FR-4） |
 | T5 | fs 适配器：isomorphic-git fs 契约 → `node:fs/promises`，**逐路径**前缀包含校验 | `lib/fs-adapter.js` | T4 | `..` 逃逸 / 绝对路径 / 软链出根一律拒绝（FR-4.2） |
 | T6 | 凭据：key 名规整（`GIT_CREDENTIAL_<HOST>`）+ `ctx.credentials.resolve` + `onAuth` / `onAuthFailure` + 错误引导 + 重试上限 1 | `lib/auth.js` | T2 | 缺凭据报 key 名与设置入口；不裸抛 401（FR-5） |
-| T7 | diff 封装：jsdiff `createTwoFilesPatch` / `stat` 汇总 / 二进制（含 NUL）判定 | `lib/diff.js` | T3 | 二进制只报 `differ`，不做文本 diff（FR-7.2） |
+| T7 | diff 封装：**宿主闭包** jsdiff 的 `createTwoFilesPatch` / `stat` 汇总 / 二进制（含 NUL）判定 | `lib/diff.js` | T3 | 二进制只报 `differ`，不做文本 diff（FR-7.2） |
 | T8 | 输出渲染：status 五个分组、提交摘要、冲突列表、错误归因文案 | `lib/report.js` | T2 | 渲染可读且失败原因如实（FR-3、FR-9） |
 | T9 | **21 个工具**：`lib/tools/*.js` 一文件一工具，全部经 `defineTool`；写类工具带 `sandbox_permissions` + `justification` | `lib/tools/*.js` | T3–T8 | 21 个工具全部注册成功，无 schema 拒绝（FR-3.1、FR-3.2、FR-3.3） |
 | T10 | 三个自建能力工具面：`git_show` / `git_diff` / `git_revert`（含 `revert` 的父提交枚举与 fail-closed 分叉判定） | `lib/tools/git_{show,diff,revert}.js` | T7、T9 | 分叉时拒绝并列出冲突路径（FR-7.1、FR-7.3） |
@@ -37,9 +37,9 @@
 
 | ID | 任务 | 命令 / 落点 | 验收 |
 |---|---|---|---|
-| T18 | 实现 `collectGitRuntime()`：pin 常量 + staging `pnpm add isomorphic-git@1.44.2 diff@8.0.2 --config.node-linker=hoisted --ignore-scripts` + 嵌套落位 + `diff` 落顶层 + 产物断言（入口非空 / 版本一致）+ 幂等（快路径同样断言） | `scripts/collect-dsh.mjs` | AC-11、AC-12（FR-8） |
-| T19 | 跑 `collect-dsh` 全链：插件物化 + 依赖物化；既有 `assertDshMarketVersion()`（pin `1.66.7`）与 `assertPresetRowsMirrorMainJs()` 仍需通过 | `node scripts/collect-dsh.mjs` | `dsh-dist/node_modules/harmony-plugin-git/` 与 `dsh-dist/node_modules/isomorphic-git/node_modules/` 均存在 |
-| T20 | 重打 `dsh-dist.tar.gz` 并落到 resfile | tar 命令（工程既有步骤） | 时间戳更新；体积增量约 +9 MB（基线 286 MB） |
+| T18 | 实现 `collectGitRuntime()`：pin 常量（**仅** `ISOMORPHIC_GIT_VERSION`；jsdiff 不 pin）+ staging `pnpm add isomorphic-git@1.44.2 --config.node-linker=hoisted --ignore-scripts`（不含 `diff`）+ 整棵闭包嵌套到**插件自己的** `dsh-dist/node_modules/harmony-plugin-git/node_modules/` + 产物断言（入口非空 / 版本一致）+ 幂等（快路径同样断言；正常构建先删 `distDir`，快路径只能在单独二次调用时验证）+ 失败**抛错**而非 `process.exit(1)`（由调用点 `try/catch` 终止进程） | `scripts/collect-dsh.mjs` | AC-11、AC-12（FR-8） |
+| T19 | 跑 `collect-dsh` 全链：插件物化 + 依赖物化；既有 `assertDshMarketVersion()`（pin `1.66.7`）与 `assertPresetRowsMirrorMainJs()` 仍需通过 | `node scripts/collect-dsh.mjs` | `dsh-dist/node_modules/harmony-plugin-git/` 与 `dsh-dist/node_modules/harmony-plugin-git/node_modules/isomorphic-git/` 均存在；顶层 `dsh-dist/node_modules/diff` 仍是宿主的 `9.0.0`（插件不发 diff） |
+| T20 | 重打 `dsh-dist.tar.gz` 并落到 resfile | tar 命令（工程既有步骤） | 时间戳更新；体积增量约 +8.6 MB（基线 286 MB；仅 isomorphic-git 闭包，jsdiff 复用宿主闭包） |
 | T21 | HAP 编译签名（debug）：**必须显式传参** `-Hvigorw D:\oh-workspace\command-line-tools\bin\hvigorw.bat -DevEcoHome "D:\oh-workspace\DevEco Studio"`；构建环境先设 `DEVECO_SDK_HOME` | `scripts/build-debug.ps1`（前置 `scripts/collect-runtime.mjs`） | `BUILD SUCCESSFUL` + 签名 HAP 产出 + 签名自检通过 |
 | T22 | **装机前置**：清设备 `$DSH_HOME/dsh-dist`（解压 marker 命中即跳过 → 会继续跑旧产物），再安装 | `hdc shell` + `hdc app install -r` | 安装成功；启动后是本次产物（T24 复核） |
 
