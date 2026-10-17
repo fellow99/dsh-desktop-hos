@@ -57,7 +57,6 @@
 
 | | 浅色 | 深色 |
 |---|---|---|
-| **新会话** —— 官方 dsh Web UI，由进程内 Host 承载 | <img src="docs/images/home-light.png" width="420" alt="新会话，浅色"> | <img src="docs/images/home-dark.png" width="420" alt="新会话，深色"> |
 | **Agent 对话** —— 工具调用、会话轨迹、模型与缓存遥测 | <img src="docs/images/chat-light.png" width="420" alt="Agent 对话，浅色"> | <img src="docs/images/chat-dark.png" width="420" alt="Agent 对话，深色"> |
 | **设置** —— 模型、插件、Agent 预设、插件市场、外观 | <img src="docs/images/settings-light.png" width="420" alt="设置，浅色"> | <img src="docs/images/settings-dark.png" width="420" alt="设置，深色"> |
 
@@ -552,6 +551,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 - [dsh-market](https://github.com/dsh-market/dsh-market)（同级目录 `../dsh-market`）—— 内置插件市场（npm 包 `dshmarket`），经 `collect-dsh.mjs` 物化
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-鸿蒙运行时
 - [dsh-desktop](https://github.com/fellow99/dsh-desktop)（同级目录 `../dsh-desktop`）—— 架构设计参考（Electron 桌面壳）
+- [DSH Desktop 官网](https://fellow99.github.io/dsh-desktop-website/) —— 两个版本的实拍截图与架构说明
 
 ## 许可证
 

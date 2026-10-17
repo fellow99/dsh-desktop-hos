@@ -57,7 +57,6 @@ Deferred by decision, not by oversight: the frameless window (moving window cont
 
 | | Light | Dark |
 |---|---|---|
-| **New session** — the official dsh Web UI, hosted in-process | <img src="docs/images/home-light.png" width="420" alt="New session, light theme"> | <img src="docs/images/home-dark.png" width="420" alt="New session, dark theme"> |
 | **Agent conversation** — tool calls, session trace, model and cache telemetry | <img src="docs/images/chat-light.png" width="420" alt="Agent conversation, light theme"> | <img src="docs/images/chat-dark.png" width="420" alt="Agent conversation, dark theme"> |
 | **Settings** — models, plugins, agent presets, plugin market, appearance | <img src="docs/images/settings-light.png" width="420" alt="Settings, light theme"> | <img src="docs/images/settings-dark.png" width="420" alt="Settings, dark theme"> |
 
@@ -589,6 +588,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 - [dsh-market](https://github.com/dsh-market/dsh-market) (sibling directory `../dsh-market`) — the built-in visual plugin marketplace (npm package `dshmarket`), materialized via `collect-dsh.mjs`
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron) (sibling directory `../harmonypc-electron`) — the Electron-on-HarmonyOS runtime
 - [dsh-desktop](https://github.com/fellow99/dsh-desktop) (sibling directory `../dsh-desktop`) — architecture-design reference (Electron desktop shell)
+- [DSH Desktop website](https://fellow99.github.io/dsh-desktop-website/) — both editions, real device screenshots, and the architecture story in one page
 
 ## License
 
