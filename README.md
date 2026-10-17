@@ -1,35 +1,85 @@
 [中文](./README_zh.md) | English
 
----
-
 # DSH Desktop (HarmonyOS)
 
-> A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
+> The official DeepSeek Harness (DSH) Web UI, **unmodified**, running on HarmonyOS 2in1 / tablet through Electron 37 — a real Electron app on HarmonyOS, not an ArkUI rewrite of the interface.
 
-**Version**: `0.2.0` · **Status**: 🔶 Built & signed (device verification pending) — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
+<p align="center">
+  <img src="docs/images/home-light.png" alt="DSH Desktop on HarmonyOS — a new session in the official dsh Web UI" width="100%">
+</p>
+<p align="center"><sub><b>Device capture, not a mockup</b> — HarmonyOS 6.1.0.135 (API 24), 2in1. The UI is the official dsh Web UI, loaded same-origin from the in-process dsh Host.</sub></p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/release-0.2.0-4D6BFE" alt="Version">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.0--rc.2-7C5CFF" alt="dsh version">
+  <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
+  <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
+  <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
+</p>
 
-## Current versions
+**Status** `0.2.0` (`versionCode` 1007) — built and signed; core flows verified on a HarmonyOS 6.1.0.135 (API 24) device: chat, agent loop, tool calls, session persistence, plugin market, window state. Distribution reality up front: a **debug-signed HAP is bound to the signing account/device**, and a **release-signed package can only ship through AppGallery** — see [How to get it](#how-to-get-it).
 
-| Field | Value |
+## Why this port is different
+
+There are other ways to get DSH onto HarmonyOS. The trade-off is the whole story of this repo:
+
+| | This project (Electron route) | A native-host route (Node runtime + ArkUI host) |
+|---|---|---|
+| Interface | The **official Web UI, byte-for-byte** — nothing re-implemented | A native host around the same Web content; platform chrome is rewritten |
+| Fidelity to desktop | Identical semantics: same renderer, same Node APIs, same data plane | Good, but the host layer is a re-implementation that must track upstream |
+| Runtime permission | Requires the ACL restricted permission `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` (JIT) — **2in1 / tablet only** | No JIT, so no such permission |
+| Device reach | HarmonyOS 2in1 / tablet | Can extend to phones |
+
+Neither is "better"; they optimize different things. This repo exists to prove the Electron route end-to-end — including every sandbox conflict it hits.
+
+## What works today
+
+| Capability | State |
 |---|---|
-| `versionName` | `0.2.0` |
-| `versionCode` | `1007` |
+| dsh Web UI in a window (100% reuse of the dsh frontend) | ✅ |
+| Session persistence + full-text search (`better-sqlite3`, aarch64 ABI 138) | ✅ |
+| Plugin marketplace (`dshmarket` built in) | ✅ |
+| Window state persistence (maximized / bounds) + F11 fullscreen | ✅ |
+| Command execution — non-PTY resident `/system/bin/sh` driven by a sentinel-line protocol, with a tool-layer path fence | ✅ ⚠️ the fence is **best-effort and bypassable, not a sandbox** |
+| Image attachments — `sharp` replaced by a pure-JS container parser; conversions it cannot do are routed through the platform image framework by an ArkTS bridge (decode / EXIF / scale / re-encode) | ⚠️ clean 8-bit sRGB files pass through byte-identically; with no bridge reachable every conversion is refused with an explicit error; no thumbnails |
+| Bundling our own Node / pnpm / Python runtime | ⛔ **not possible** — shipping an ELF requires a binary certificate (AGC `certType: 4`), which Huawei does not grant to individual developers. The host installing `pnpm` from the system terminal is an **optional dependency, never a product capability** |
+| Process sandbox (`koffi` / landlock) | ❌ out of scope |
 
-Source: `AppScope/app.json5`. `versionCode` must be a number and must **strictly increase** on every AppGallery submission — see [AppGallery submission](#appgallery-submission).
+### Limits, in detail
 
----
+- **Command execution.** Upstream's `tool-bash` row stays disabled: `node-pty` has no aarch64 artifact, and PTY is denied by SELinux. The replacement spawns a resident `/system/bin/sh` and reads replies through a sentinel line; the path fence lives in the tool layer and is **bypassable by design**.
+- **Bundled runtime.** The app already sees `/data/service/hnp/bin` on `PATH` and a structurally valid `node` lives there — only `pnpm` is missing. Once the user installs `pnpm` **from the system terminal** (the symlink ban is app-domain-only, so it must not be installed from inside the app), the marketplace's `probePnpm()` succeeds and plugin install/uninstall works. Nothing else depends on a bundled runtime: command execution spawns the system's own `sh`/`toybox`, and the file / search / skill / subagent / workflow / image features are pure JS. Analysis: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.
+- **Images.** The stub parses PNG/JPEG/GIF/WebP container headers; anything it cannot convert is handed to the ArkTS bridge (decode, EXIF orientation, scale, re-encode to JPEG/WebP/PNG). Clean 8-bit sRGB input inside the limits passes through byte-identically at zero conversion cost. With no bridge reachable (plain Node), every conversion is refused with an explicit, attributed error. No thumbnails.
 
-## What is this
+Deferred by decision, not by oversight: the frameless window (moving window controls into the renderer costs more than it buys) and launch-at-login (`autoStartupManager` exposes read-only queries only). The system tray ships today — status-bar icon plus right-click menu.
 
-DeepSeek Harness (`dsh`) is an open-source agent harness by DeepSeek AI, built on an "everything is a plugin" architecture (driven by [Cordis](https://github.com/cordiverse/cordis)); its native entry is `dsh web` (a browser Web UI).
+## Screens
 
-This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-on-HarmonyOS runtime), 100% reusing the dsh frontend, making the agent harness run like a first-class desktop app on HarmonyOS devices. It is **not** a thin "wrap `dsh web` pointing at localhost" shell, but a first-class desktop app built on dsh's existing architecture, benchmarked against `dsh-desktop`.
+| | Light | Dark |
+|---|---|---|
+| **New session** — the official dsh Web UI, hosted in-process | <img src="docs/images/home-light.png" width="420" alt="New session, light theme"> | <img src="docs/images/home-dark.png" width="420" alt="New session, dark theme"> |
+| **Agent conversation** — tool calls, session trace, model and cache telemetry | <img src="docs/images/chat-light.png" width="420" alt="Agent conversation, light theme"> | <img src="docs/images/chat-dark.png" width="420" alt="Agent conversation, dark theme"> |
+| **Settings** — models, plugins, agent presets, plugin market, appearance | <img src="docs/images/settings-light.png" width="420" alt="Settings, light theme"> | <img src="docs/images/settings-dark.png" width="420" alt="Settings, dark theme"> |
 
-## Core design
+## How to get it
 
-`dsh` has completed its **Host/Client split**, and its webserver **serves both the SPA dist and `/api`**. This project therefore uses an **in-process Host + webserver + same-origin data plane**:
+Three routes, in order of convenience:
+
+1. **AppGallery (planned).** Release-signed App Packs can only be installed from AppGallery. Two prerequisites gate the listing: the ACL restricted permission (≈3 business days review, mainland-China developer accounts only) and the AI compliance track (algorithm filing / model registration / security assessment). See [AppGallery submission](#appgallery-submission).
+2. **Build it yourself** — the supported route today. Four stages, then a local HAP: `collect-runtime → build-dsh → collect-dsh → tar`, then `scripts/build-debug.ps1`. See [Development](#development). Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.
+3. **Re-sign a debug build with your own account.** A debug profile is device-bound, so someone else's debug HAP will not install on your machine; regenerate the profile in DevEco (`File → Project Structure → Signing Configs`) and rebuild. See [Signing & restricted permissions](#signing--restricted-permissions-full-procedure).
+
+> ⚠️ `hdc app install` on a **release**-signed package fails with `code:9568322 ... not trusted app source`. For on-device regression use `-BuildMode release -SignMode debug`.
+
+## Compatibility
+
+| Shell | dsh (upstream tag) | Runtime | Device / API | Verified |
+|---|---|---|---|---|
+| `0.2.0` · `versionCode` 1007 | `dsh-v0.2.0-rc.2` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | core flows verified on device |
+
+`versionCode` must be a number and must **strictly increase** on every AppGallery submission. Upstream dsh is a developer preview: each shell pins one tag, and `patches/<dsh-tag>/` moves with it.
+
+## Architecture
 
 ```
 ┌─ HarmonyOS HAP ─────────────────────────────────────────────────┐
@@ -38,45 +88,24 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 │         ┌─ Electron main process (Node.js, also hosts dsh Host)─┐│
 │         │  main.js: extract dsh-dist.tar.gz → runProfile('desktop')│
 │         │    ├─ webserver ← 0.0.0.0:<free port>, serves dist+/api│
-│         │    ├─ apiProxy  ← RPC gateway                         │
-│         │    └─ connection ← /api + WebSocket registration      │
-│         │  once ready: loadURL(http://<LAN IP>:<port>/)         │
+│         │    ├─ apiProxy  ← RPC gateway                         ││
+│         │    └─ connection ← /api + WebSocket registration      ││
+│         │  once ready: loadURL(http://<LAN IP>:<port>/)         ││
 │         └────────────────────▲──────────────────────────────────┘│
-│                              │ same-origin (no CORS/auth) + Host header rewrite│
+│                              │ same-origin + Host header rewrite │
 │         ┌────────────────────┴──────────────────────────────────┐│
-│         │ Renderer: loadURL(LAN IP) ← same-origin               ││
-│         │   standard dsh Web UI (WebApiClient: fetch /api + WS) ││
+│         │ Renderer: the standard dsh Web UI (fetch /api + WS)    ││
 │         └───────────────────────────────────────────────────────┘│
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 13 patches).
+Three HarmonyOS adaptations make that diagram work; each one is a patch with a root cause behind it:
 
-**Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
+1. **Loopback network isolation.** HarmonyOS NEXT blocks renderer access to `127.0.0.1`, so the webserver binds `0.0.0.0` and the renderer connects over the LAN IP — while the embedded renderer rewrites `Host`/`Origin` back to `127.0.0.1:<port>` before requests leave the session, so dsh's loopback-only privileged-method fence still passes. Security semantics are unchanged: other LAN devices still get 403.
+2. **No symlinks, no hardlinks.** The sandbox rejects both (`EACCES`/`EPERM`), so profile publishing falls back to `cpSync`, and atomic writes publish by same-directory `rename` with a guarded create.
+3. **`os.homedir()` points outside the sandbox.** `HOME` is redirected to the sandbox-writable `userData` directory before startup.
 
-- HarmonyOS NEXT isolates renderer access to `127.0.0.1` (**loopback network isolation**) → webserver binds `0.0.0.0` and the renderer connects via the LAN IP, with the embedded renderer's outgoing requests rewriting `Host`/`Origin` to `127.0.0.1:<port>` before they leave the session, so dsh's loopback-only privileged-method fence passes (security semantics unchanged — other LAN devices still get 403).
-- HarmonyOS sandbox forbids symlink (`EACCES`) → dsh profile falls back to `cpSync` recursive copy (patch).
-- `os.homedir()` returns an out-of-sandbox directory (`EPERM`) → the main process points `HOME` at the sandbox-writable `userData` directory before startup.
-
-## MVP capabilities
-
-- ✅ dsh Web UI runs in a window (100% reuses dsh frontend)
-- ✅ Session persistence / full-text search (better-sqlite3, Electron 37 / Node ABI v138 aarch64 artifact, injected by collect-dsh)
-- ✅ Plugin marketplace (dsh-market built-in)
-- ✅ Window state persistence (maximized / bounds restored) + F11 fullscreen toggle
-- ⚠️ Image attachments (sharp is replaced by a pure-JS stub that parses PNG/JPEG/GIF/WebP container headers; any conversion the stub cannot perform itself is routed through the platform image framework by an ArkTS bridge — decode, EXIF orientation, scale, and re-encode to JPEG/WebP/PNG. Already-clean 8-bit sRGB PNG/JPEG/WebP inside the limits still pass through byte-identically and cost no conversion. When no bridge is reachable — plain Node, such as the stub's own test — every conversion is refused with an explicit, attributed error. No thumbnails.)
-- ✅ Command execution — the `bash` tool (plugin `harmony-plugin-exec`): a **non-PTY resident `/system/bin/sh`** driven by a sentinel-line protocol, plus a tool-layer path fence. Verified on device; the upstream `tool-bash` row stays disabled (`node-pty` has no aarch64 artifact, and PTY is denied by SELinux). ⚠️ The fence is **best-effort and bypassable — not a sandbox**; see the plugin README's Known Limitations.
-- ❌ Process sandbox (koffi / landlock)
-- ⛔ **Bundling our own Node / pnpm / python runtime — NOT POSSIBLE for this project.** Shipping an ELF requires a **binary certificate** (AGC `certType: 4`), and Huawei **does not grant it to individual developers** (it needs an enterprise entity, applied for through the online work-order system).
-  - **0.1.5 decision (2026-09-22): take "route 1" — the host installs `pnpm`, and this app makes NO AppGallery commitment for this capability.** Concretely: the app already sees `/data/service/hnp/bin` on its `PATH` and a structurally valid `node` lives there — only `pnpm` is missing. Once the user installs `pnpm` **from the system terminal** (the symlink ban is app-domain-only, so it must NOT be installed from within the app), the marketplace's `probePnpm()` succeeds and plugin install/uninstall works. It is treated as an **optional dependency, never a product capability** — do not advertise it.
-  - Nothing else in the MVP depends on a bundled runtime: command execution spawns the **system's own** `sh`/toybox, and the file/search/skill/subagent/workflow/image features are pure JS. Analysis: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.
-
-(Phase 2: frameless window and launch at login. Both were evaluated and rejected — hiding the system title bar (`window.setWindowDecorVisible`) is available and needs no permission, but it moves window controls into the renderer at a cost the benefit does not justify (#28b); `autoStartupManager` exposes only read-only queries with no public enable API, so guiding the user to system Settings is the only route (#28d). The system tray ships today (status-bar icon + right-click menu), and the native file picker reuses dsh's standard frontend directory browser.)
-
-## Target platforms & distribution
-
-- **Platforms**: HarmonyOS 2in1 / tablet (`deviceTypes: ["2in1", "tablet"]`)
-- **Distribution**: local debug-signed HAP for development (DevEco auto-signing + Huawei cert) **and AppGallery submission** — release-signed App Pack (`.app`) built with a Huawei-issued release certificate + release profile (see [AppGallery submission](#appgallery-submission)). Auto-update is not implemented yet.
+`dsh`'s webserver already serves the SPA dist and `/api` on one port, so the data plane needs **no CORS, no auth, no custom protocol, no IPC carrier** — and the upstream tree stays unmodified apart from the patch set.
 
 ## Tech stack
 
@@ -501,8 +530,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 - Upload the signed App Pack: `build\outputs\default\*-signed.app`.
 - Optionally upload `build\outputs\default\symbol\release\app-symbol.zip` so crash reports can be
   symbolicated.
-- `versionCode` (currently `1005`) must be a number and must **strictly increase** on every subsequent
-  submission — see [Current versions](#current-versions).
+- `versionCode` (currently `1007`) must be a number and must **strictly increase** on every subsequent
+  submission — see [Compatibility](#compatibility).
 - There is **no separate PC/2-in-1 review track** in the official review guide. At submission, if the
   package supports PC/2-in-1 but the configured distribution devices do not include it, AGC prompts you
   to update the supported devices.

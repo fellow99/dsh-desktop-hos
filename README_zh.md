@@ -1,35 +1,85 @@
 [English](./README.md) | 中文
 
----
-
 # DSH Desktop（HarmonyOS 版）
 
-> 基于「Electron-on-鸿蒙」运行时（[harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)，Electron 37 / Node 22.17.0）的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 桌面封装——在鸿蒙设备的 Electron 主进程内跑 dsh Host（含 webserver），渲染进程同源加载 dsh Web UI，界面 100% 复用 dsh Web UI。
+> 官方 DeepSeek Harness（DSH）Web UI，**零改动**，通过 Electron 37 跑在鸿蒙 2in1 / 平板上——这是一个真正的 Electron 应用，而不是把界面用 ArkUI 重写一遍。
 
-**版本**：`0.2.0` · **状态**：🔶 已构建并签名（真机验证待补）——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
+<p align="center">
+  <img src="docs/images/home-light.png" alt="DSH Desktop 鸿蒙版——官方 dsh Web UI 的新会话页" width="100%">
+</p>
+<p align="center"><sub><b>真机实拍，不是效果图</b> —— HarmonyOS 6.1.0.135（API 24），2in1。界面就是官方 dsh Web UI，由进程内 dsh Host 同源加载。</sub></p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/release-0.2.0-4D6BFE" alt="版本">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.0--rc.2-7C5CFF" alt="dsh 版本">
+  <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
+  <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
+  <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
+</p>
 
-## 当前版本
+**状态** `0.2.0`（`versionCode` 1007）—— 已构建并签名；核心链路在 HarmonyOS 6.1.0.135（API 24）真机验证通过：对话、Agent 循环、工具调用、会话持久化、插件市场、窗口状态。先把分发现实说清楚：**debug 签名的 HAP 绑定签名账号/设备**，**release 签名的包只能经 AppGallery 分发** —— 见[怎么获取](#怎么获取)。
 
-| 字段 | 值 |
+## 为什么这条路线不一样
+
+把 DSH 搬到鸿蒙不止一条路，取舍本身就是这个仓库的全部内容：
+
+| | 本工程（Electron 路线） | 原生宿主路线（Node 运行时 + ArkUI 宿主） |
+|---|---|---|
+| 界面 | **官方 Web UI，逐字节复用**，界面零重写 | 同一份 Web 内容外面套原生宿主，平台外壳需重写 |
+| 与桌面端一致性 | 语义完全一致：同一渲染器、同一套 Node API、同一条数据面 | 观感好，但宿主层是重实现，必须持续跟上游 |
+| 运行时权限 | 需要 ACL 受限权限 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（JIT）——**仅 2in1 / 平板** | 无 JIT，因此不需要该权限 |
+| 设备覆盖 | 鸿蒙 2in1 / 平板 | 可延伸到手机 |
+
+两者不存在谁更好，只是优化目标不同。本工程存在的意义是把 Electron 路线端到端跑通——包括它撞到的每一处沙箱冲突。
+
+## 现在能用的
+
+| 能力 | 状态 |
 |---|---|
-| `versionName` | `0.2.0` |
-| `versionCode` | `1007` |
+| dsh Web UI 在窗口内运行（100% 复用 dsh 前端） | ✅ |
+| 会话持久化 + 全文检索（`better-sqlite3`，aarch64 ABI 138） | ✅ |
+| 插件市场（内置 `dshmarket`） | ✅ |
+| 窗口状态记忆（最大化 / 位置尺寸）+ F11 全屏 | ✅ |
+| 命令执行：非 PTY 的常驻 `/system/bin/sh`，哨兵行协议驱动，工具层路径围栏 | ✅ ⚠️ 围栏是 **best-effort，可被绕过，不是沙箱** |
+| 图片附件：`sharp` 由纯 JS 容器头解析替代，做不了的转换经 ArkTS 桥交给平台图像框架（解码 / EXIF / 缩放 / 重编码） | ⚠️ 干净的 8-bit sRGB 文件按字节原样通过；取不到桥时每次转换都如实拒绝；无缩略图 |
+| 随包自带 Node / pnpm / Python 运行时 | ⛔ **不可实现** —— 分发 ELF 需要二进制证书（AGC `certType: 4`），华为不授予个人开发者。用户自行在系统终端安装 `pnpm` 属**可选依赖，绝不作产品能力宣传** |
+| 进程沙箱（`koffi` / landlock） | ❌ 不在范围内 |
 
-来源：`AppScope/app.json5`。`versionCode` 必须为数字，且每次向 AppGallery 提交都必须**严格递增** —— 见[应用市场上架](#应用市场上架)。
+### 限制的具体原因
 
----
+- **命令执行。** 上游 `tool-bash` 行保持 disabled：`node-pty` 无 aarch64 产物，且 PTY 被 SELinux 拒绝。替代方案是常驻 `/system/bin/sh` + 哨兵行读取；路径围栏在工具层，**设计上就是可绕过的**。
+- **自带运行时。** 应用已能在 `PATH` 上看到 `/data/service/hnp/bin`，那里有结构校验通过的 `node`，只缺 `pnpm`。用户在**系统终端**装好 `pnpm` 后（symlink 禁令仅限应用域，故**不得**在应用内安装），市场 `probePnpm()` 即通过，插件安装/卸载可用。其余能力都不依赖自带运行时：命令执行 spawn 系统自带 `sh`/`toybox`，文件 / 搜索 / 技能 / 子 agent / workflow / 图片均为纯 JS。分析见 [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8。
+- **图片。** stub 解析 PNG/JPEG/GIF/WebP 容器头；无法自行完成的转换交给 ArkTS 桥（解码、EXIF 方向、缩放、重编码为 JPEG/WebP/PNG）。限额内且本就干净的 8-bit sRGB 输入按字节原样通过、零转换成本。取不到桥时（纯 Node），每次转换都如实拒绝并注明边界。无缩略图。
 
-## 这是什么
+二期被评估后**主动放弃**：无边框窗口（把窗口控制移进渲染层，代价与收益不成比例）与开机自启（`autoStartupManager` 只有只读查询）。系统托盘已交付——状态栏图标 + 右键菜单。
 
-DeepSeek Harness（`dsh`）是 DeepSeek AI 开源的 agent harness，基于「一切皆插件」架构（由 [Cordis](https://github.com/cordiverse/cordis) 驱动），原生入口是 `dsh web`（浏览器 Web UI）。
+## 界面
 
-本工程把 dsh Web UI 封装进鸿蒙原生桌面壳（Electron-on-鸿蒙运行时），100% 复用 dsh 前端，让 agent harness 在鸿蒙设备上像一等公民桌面应用一样运行。它**不是**「包一层 `dsh web` 指向 localhost」的粗壳，而是构建在 dsh 现有架构之上、对标 `dsh-desktop` 的一等公民桌面应用。
+| | 浅色 | 深色 |
+|---|---|---|
+| **新会话** —— 官方 dsh Web UI，由进程内 Host 承载 | <img src="docs/images/home-light.png" width="420" alt="新会话，浅色"> | <img src="docs/images/home-dark.png" width="420" alt="新会话，深色"> |
+| **Agent 对话** —— 工具调用、会话轨迹、模型与缓存遥测 | <img src="docs/images/chat-light.png" width="420" alt="Agent 对话，浅色"> | <img src="docs/images/chat-dark.png" width="420" alt="Agent 对话，深色"> |
+| **设置** —— 模型、插件、Agent 预设、插件市场、外观 | <img src="docs/images/settings-light.png" width="420" alt="设置，浅色"> | <img src="docs/images/settings-dark.png" width="420" alt="设置，深色"> |
 
-## 核心设计
+## 怎么获取
 
-dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与 `/api`**。本工程因此采用**进程内 Host + webserver + 同源数据面**：
+三条路，按省事程度排序：
+
+1. **AppGallery（计划中）。** release 签名的 App Pack 只能从应用市场安装。上架被两件事卡住：ACL 受限权限（约 3 个工作日审核，仅中国大陆开发者账号）与 AI 合规三件套（算法备案 / 大模型登记 / 安全评估）。见[应用市场上架](#应用市场上架)。
+2. **自己构建** —— 目前唯一受支持的路径。四阶段后本地出 HAP：`collect-runtime → build-dsh → collect-dsh → tar`，再跑 `scripts/build-debug.ps1`。见[开发](#开发)。环境要求：DevEco Studio 4.0+、HarmonyOS SDK API 17+（targetSdk 6.1.1(24)）、Node 18+、pnpm@11、HDC。
+3. **用自己的账号重签一个 debug 包。** debug profile 绑定设备，别人的 debug HAP 装不到你的机器上；在 DevEco（`File → Project Structure → Signing Configs`）重新生成 profile 后重建即可。见[签名与受限权限](#签名与受限权限完整流程)。
+
+> ⚠️ 对**release** 签名包执行 `hdc app install` 会失败：`code:9568322 ... not trusted app source`。真机回归请用 `-BuildMode release -SignMode debug`。
+
+## 兼容矩阵
+
+| 外壳版本 | dsh（上游 tag） | 运行时 | 设备 / API | 验证程度 |
+|---|---|---|---|---|
+| `0.2.0` · `versionCode` 1007 | `dsh-v0.2.0-rc.2` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 核心链路真机验证通过 |
+
+`versionCode` 必须为数字，且每次向 AppGallery 提交都必须**严格递增**。上游 dsh 处于 developer preview：一个外壳钉一个 tag，`patches/<dsh-tag>/` 随之迁移。
+
+## 架构
 
 ```
 ┌─ 鸿蒙 HAP ──────────────────────────────────────────────────────┐
@@ -42,41 +92,20 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 │         │    └─ connection ← /api + WebSocket 注册              ││
 │         │  就绪后 loadURL(http://<局域网 IP>:<port>/)            ││
 │         └────────────────────▲─────────────────────────────────┘│
-│                              │ 同源（无 CORS/鉴权）+ Host 头改写  │
+│                              │ 同源 + Host 头改写                 │
 │         ┌────────────────────┴─────────────────────────────────┐│
-│         │ 渲染进程：loadURL(局域网 IP) ← 同源                    ││
-│         │   标准 dsh Web UI（WebApiClient：fetch /api + WS 事件）││
+│         │ 渲染进程：标准 dsh Web UI（fetch /api + WS 事件）      ││
 │         └──────────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 14 个 patch）。
+让这张图成立的是三处鸿蒙适配，每一处都对应一个写清了根因的 patch：
 
-**与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
+1. **loopback 网络隔离。** 鸿蒙 NEXT 下渲染进程访问不了 `127.0.0.1`，因此 webserver 绑 `0.0.0.0`、渲染进程走局域网 IP 建连；同时在内嵌渲染进程请求出栈前把 `Host`/`Origin` 改写回 `127.0.0.1:<port>`，让 dsh 的 loopback-only 特权方法围栏照旧通过。安全语义不变：局域网内其他设备仍然 403。
+2. **禁 symlink、禁 hardlink。** 沙箱两者都拒（`EACCES`/`EPERM`），因此 profile 发布回退 `cpSync`，原子写改为同目录 `rename` 发布（目标已存在则先守卫校验）。
+3. **`os.homedir()` 指向沙箱外。** 启动前把 `HOME` 指向沙箱可写的 `userData` 目录。
 
-- 鸿蒙 NEXT 下渲染进程访问 `127.0.0.1` 存在 **loopback 网络隔离** → webserver 绑 `0.0.0.0`、渲染进程走局域网 IP 建连，并在内嵌渲染进程请求出栈前把 `Host`/`Origin` 改写为 `127.0.0.1:<port>` 以通过 dsh 的 loopback-only 特权方法围栏（安全语义不变，局域网其他设备仍 403）。
-- 鸿蒙沙箱禁 symlink（`EACCES`）→ dsh profile 回退 `cpSync` 递归拷贝（patch）。
-- 鸿蒙沙箱中 `os.homedir()` 返回沙箱外目录（`EPERM`）→ 主进程启动前把 `HOME` 指向沙箱可写目录 `userData`。
-
-## MVP 能力
-
-- ✅ dsh Web UI 在窗口内运行（100% 复用 dsh 前端）
-- ✅ 会话持久化 / 全文搜索（better-sqlite3，Electron 37 / Node ABI v138 aarch64 成品，由 collect-dsh 注入）
-- ✅ 插件市场（dsh-market 内置）
-- ✅ 窗口状态持久化（最大化/位置尺寸）+ F11 全屏
-- ⚠️ 图片附件（sharp 由纯 JS stub 替代：按 PNG/JPEG/GIF/WebP 容器头解析 metadata；stub 自身做不了的转换改由 ArkTS 桥调用平台图像框架完成 —— 解码、EXIF 方向、缩放、并重新编码为 JPEG/WebP/PNG。限额内且本就干净的 8-bit sRGB PNG/JPEG/WebP 仍按字节原样通过、不付出转换。取不到桥时（纯 Node，例如 stub 自测）每次转换都如实拒绝并注明边界。无缩略图。）
-- ✅ 命令执行 —— `bash` 工具（插件 `harmony-plugin-exec`）：**非 PTY 的常驻 `/system/bin/sh`**，由哨兵行协议驱动，外加工具层路径围栏。已真机验证；上游 `tool-bash` 行仍保持 disabled（`node-pty` 无 aarch64 产物，且 PTY 被 SELinux 拒绝）。⚠️ 围栏为 **best-effort、可被绕过 —— 不是沙箱**；见该插件 README 的 Known Limitations。
-- ❌ 进程沙箱（koffi / landlock）
-- ⛔ **随包自带 Node / pnpm / python 运行时 —— 本工程不可实现。** 分发 ELF 需要**二进制证书**（AGC `certType: 4`），而华为**不授予个人开发者**（需企业实体，经在线工单系统申请）。
-  - **0.1.5 决策（2026-09-22）：走「路线一」—— 由主机安装 `pnpm`，本应用对该能力不作 AppGallery 上架承诺。** 具体：应用已能在 `PATH` 上看到 `/data/service/hnp/bin`，那里存在结构校验通过的 `node`，只缺 `pnpm`。用户在**系统终端**装好 `pnpm` 后（symlink 禁令仅限应用域，故**不得**在应用内安装），市场的 `probePnpm()` 即通过，插件安装/卸载可用。该能力按**可选依赖**对待、**绝不作为产品能力** —— 不要对外宣传。
-  - MVP 其余能力都不依赖自带运行时：命令执行 spawn 的是**系统自带**的 `sh`/toybox，文件/搜索/技能/子 agent/workflow/图片均为纯 JS。分析见 [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8。
-
-（二期：无边框窗口与开机自启。两者均经评估后放弃 —— 隐藏系统标题栏（`window.setWindowDecorVisible`）已就绪且无需权限，但会把窗口控制移到渲染层，代价与收益不成比例（#28b）；`autoStartupManager` 只提供只读查询、无公开启用接口，唯一路径是引导用户在系统设置中手动开启（#28d）。系统托盘已交付（状态栏图标 + 右键菜单），原生文件选择器复用 dsh 标准前端目录浏览。）
-
-## 目标平台与分发
-
-- **平台**：HarmonyOS 2in1 / tablet（`deviceTypes: ["2in1", "tablet"]`）
-- **分发**：本地 debug 签名 HAP 供开发调试（DevEco 自动签名 + 华为证书），**并上架 AppGallery** —— 用华为签发的**发布证书 + 发布 Profile**构建 release 签名的 App Pack（`.app`）（见[应用市场上架](#应用市场上架)）。自动更新尚未实现。
+dsh 的 webserver 本就在同一端口同时服务 SPA dist 与 `/api`，所以数据面**不需要 CORS、不需要鉴权、不需要自定义协议、不需要 IPC 载体**；除这批 patch 外，上游代码保持原样。
 
 ## 技术栈
 
@@ -96,9 +125,9 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（四阶段 + 14 个 patch）
+### 构建流程（四阶段 + 13 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 14 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 13 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 流水线共 **四阶段**（⓪–③），之后是本机构建 + 签名步骤（④）。阶段 ⓪ 是运行时同步：它强制覆盖上游运行时，**并重新施加本工程自己的定制**（prune + overlay），因此必须始终第一个运行。
 
@@ -469,7 +498,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 
 - 上传已签名的 App Pack：`build\outputs\default\*-signed.app`。
 - 可选上传 `build\outputs\default\symbol\release\app-symbol.zip`，以便崩溃报告可符号化。
-- `versionCode`（当前 `1005`）必须为数字，且每次后续提交必须**严格递增** —— 见[当前版本](#当前版本)。
+- `versionCode`（当前 `1007`）必须为数字，且每次后续提交必须**严格递增** —— 见[兼容矩阵](#兼容矩阵)。
 - 官方审核指南中**没有** PC/2in1 独立审核赛道。提交时若软件包支持 PC/2in1 但「配置支持设备」未包含它，AGC 会提示更新支持的设备。
 
 > **待确认：** AppGallery 上架本身的端到端审核时长（上文只记录了 ACL 审核约 3 个工作日），以及发布准备的确切材料清单 —— 两者都需在首次提交前从 AGC 页面确认。
