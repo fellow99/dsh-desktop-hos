@@ -30,7 +30,7 @@ There are other ways to get DSH onto HarmonyOS. The trade-off is the whole story
 | Runtime permission | Requires the ACL restricted permission `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` (JIT) — **2in1 / tablet only** | No JIT, so no such permission |
 | Device reach | HarmonyOS 2in1 / tablet | Can extend to phones |
 
-Neither is "better"; they optimize different things. This repo exists to prove the Electron route end-to-end — including every sandbox conflict it hits.
+Neither is "better"; they optimize different things. This repo exists to prove the Electron route end-to-end — including every sandbox conflict it hits. The desktop edition (same architecture, same data plane) is [dsh-desktop](https://github.com/fellow99/dsh-desktop).
 
 ## What works today
 

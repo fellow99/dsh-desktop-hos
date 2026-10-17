@@ -30,7 +30,7 @@
 | 运行时权限 | 需要 ACL 受限权限 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（JIT）——**仅 2in1 / 平板** | 无 JIT，因此不需要该权限 |
 | 设备覆盖 | 鸿蒙 2in1 / 平板 | 可延伸到手机 |
 
-两者不存在谁更好，只是优化目标不同。本工程存在的意义是把 Electron 路线端到端跑通——包括它撞到的每一处沙箱冲突。
+两者不存在谁更好，只是优化目标不同。本工程存在的意义是把 Electron 路线端到端跑通——包括它撞到的每一处沙箱冲突。桌面版（同一架构、同一条数据面）在 [dsh-desktop](https://github.com/fellow99/dsh-desktop)。
 
 ## 现在能用的
 
