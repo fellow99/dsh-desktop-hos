@@ -257,7 +257,7 @@ Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | 
 
 ```bash
 git clone --branch dsh-v0.2.0-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
-git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout d4f7a7962d1160e8d5d09fd9ab7f8669bad3ccd9  # dshmarket 1.66.7 (asserted at build time)
+git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout ba73a3988bb3eee82295a695d59be59563637350  # dshmarket 1.66.21 (asserted at build time)
 # ../harmonypc-electron is the Electron-on-HarmonyOS runtime project; extract the Electron 37 build artifacts to supply the 3 SOs
 ```
 

@@ -35,7 +35,7 @@ const PNPM_VERSION = '10.34.6';
  * time (`assertDshMarketVersion()`), replacing the previously inconsistent
  * README / profile / spec declarations.
  */
-const DSH_MARKET_VERSION = '1.66.7';
+const DSH_MARKET_VERSION = '1.66.21';
 
 /**
  * Pinned isomorphic-git version — materialized into the plugin's own nested node_modules by
