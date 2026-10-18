@@ -10,14 +10,14 @@
 <p align="center"><sub><b>Device capture, not a mockup</b> — HarmonyOS 6.1.0.135 (API 24), 2in1. The UI is the official dsh Web UI, loaded same-origin from the in-process dsh Host.</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-0.2.0-4D6BFE" alt="Version">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.0--rc.2-7C5CFF" alt="dsh version">
+  <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="Version">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.2-7C5CFF" alt="dsh version">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
 </p>
 
-**Status** `0.2.0` (`versionCode` 1007) — built and signed; core flows verified on a HarmonyOS 6.1.0.135 (API 24) device: chat, agent loop, tool calls, session persistence, plugin market, window state. Distribution reality up front: a **debug-signed HAP is bound to the signing account/device**, and a **release-signed package can only ship through AppGallery** — see [How to get it](#how-to-get-it).
+**Status** `0.2.1` (`versionCode` 1009) — built and signed. Core flows (chat, agent loop, tool calls, session persistence, plugin market, window state) were verified on a HarmonyOS 6.1.0.135 (API 24) device for **0.2.0**; the **0.2.1** build has not been re-verified on device yet (build + signature verified only). Distribution reality up front: a **debug-signed HAP is bound to the signing account/device**, and a **release-signed package can only ship through AppGallery** — see [How to get it](#how-to-get-it).
 
 ## Why this port is different
 
@@ -74,7 +74,7 @@ Three routes, in order of convenience:
 
 | Shell | dsh (upstream tag) | Runtime | Device / API | Verified |
 |---|---|---|---|---|
-| `0.2.0` · `versionCode` 1007 | `dsh-v0.2.0-rc.2` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | core flows verified on device |
+| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.2` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | built & signed; on-device re-verification pending (0.2.0 was verified) |
 
 `versionCode` must be a number and must **strictly increase** on every AppGallery submission. Upstream dsh is a developer preview: each shell pins one tag, and `patches/<dsh-tag>/` moves with it.
 
@@ -100,7 +100,7 @@ Three routes, in order of convenience:
 
 Three HarmonyOS adaptations make that diagram work; each one is a patch with a root cause behind it:
 
-1. **Loopback network isolation.** HarmonyOS NEXT blocks renderer access to `127.0.0.1`, so the webserver binds `0.0.0.0` and the renderer connects over the LAN IP — while the embedded renderer rewrites `Host`/`Origin` back to `127.0.0.1:<port>` before requests leave the session, so dsh's loopback-only privileged-method fence still passes. Security semantics are unchanged: other LAN devices still get 403.
+1. **Loopback network isolation.** HarmonyOS NEXT blocks renderer access to `127.0.0.1`, so the webserver binds `0.0.0.0` and the renderer connects over the LAN IP — while the embedded renderer rewrites `Host`/`Origin` back to `127.0.0.1:<port>` before requests leave the session, so dsh's loopback-only privileged-method fence still passes. Security note: because the listener binds a wildcard address, `/api` accepts the bind literal as a valid `Host`, so a non-browser LAN peer that sends `Host: 0.0.0.0:<port>` without an `Origin` is not turned away by the Host fence. The loopback fence therefore does not isolate this shell from the device's Wi-Fi; treat it as a single-user local app and keep it off untrusted networks.
 2. **No symlinks, no hardlinks.** The sandbox rejects both (`EACCES`/`EPERM`), so profile publishing falls back to `cpSync`, and atomic writes publish by same-directory `rename` with a guarded create.
 3. **`os.homedir()` points outside the sandbox.** `HOME` is redirected to the sandbox-writable `userData` directory before startup.
 
@@ -110,7 +110,7 @@ Three HarmonyOS adaptations make that diagram work; each one is a patch with a r
 
 - **Electron-on-HarmonyOS** (harmonypc-electron, Electron 37 / Node 22.17.0) — native SO + ArkTS bridge layer (aki / adapter / addon + libshim.a)
 - **ArkTS / ArkUI** (Stage model, `web_engine` HAR bridge: ~46 Adapters + ~44 AdapterBinds)
-- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.2.0-rc.2`**; its patches live in `patches/dsh-v0.2.0-rc.2/`
+- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.2.1-rc.2`**; its patches live in `patches/dsh-v0.2.1-rc.2/`
 - **dsh-market** (sibling directory `../dsh-market`, npm package `dshmarket`, built-in plugin marketplace)
 - **hvigor / DevEco Studio** (HAP build + signing)
 
@@ -235,28 +235,28 @@ Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | 
 
 > **Post-build signature assertion.** After a successful build, `build-hap.ps1` runs the SDK's `hap-sign-tool verify-app` on the produced artifact, extracts the embedded provisioning profile's `type`, and compares it with the requested `-SignMode`. A mismatch is a prominent error with a non-zero exit. (The `.p7b` is binary, so the profile JSON is located via a Latin-1 byte mapping plus brace-matching.) This guard exists because the project previously shipped a release build that was silently signed with debug material.
 
-> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.2.0-rc.2`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.2.0-rc.2/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
+> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.2.1-rc.2`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.2.1-rc.2/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
 
 | Patch | Purpose |
 |---|---|
-| `patches/dsh-v0.2.0-rc.2/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-welcome-notice.patch` | Drop the client's two `settings.onboarding` steps (versioned internal-testing notice + official-DeepSeek API-key prompt) so a first launch enters the app directly, and update `apply.client.spec.ts` to the shipped registration set |
-| `patches/dsh-v0.2.0-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
-| `patches/dsh-v0.2.0-rc.2/dsh-hardlink-to-rename.patch` | HarmonyOS sandbox refuses hard links (`EACCES`) → publish exclusively by same-directory `rename`, keeping the `link`-then-`EEXIST` preference everywhere else (session-log materialization + generation publication) |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-hardlink-fallback.patch` | Also refuses hard links on hmdfs user-directory mounts (`EPERM`, no `.link` handler) → `writeFileAtomic`'s guarded-create path falls back to a same-directory `rename` when the target is verified absent, instead of failing the create with `FS_IO_ERROR`. Scoped to `fs-local`; the link preference is unchanged wherever links work |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-remove-primitive.patch` | Adds the `ctx.fs` seam's missing `remove` mutation primitive so a file tool can delete through the same sandbox fence as write/edit: a **non-abstract** `FileSystem.remove` whose default body throws (an abstract member would fail compilation for the six concrete `extends FileSystem` classes), a `fs-local` implementation in its own `remove.ts`, and a `fs-sandbox` override that runs `checkedTarget` first |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-lefthook-postinstall.patch` | Drops dsh's root `postinstall` (the lefthook git-hook installer). It refuses any checkout whose common git config carries `core.worktree` — true of every submodule checkout — so `collect-dsh`'s `pnpm deploy` aborted with `ELIFECYCLE`. Git hooks are irrelevant to a shipped HAP, and the installer never succeeded here (`dsh-hooks/` is absent) |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-write-bytes.patch` | Adds the `ctx.fs` seam's missing `writeBytes` mutation so a file tool can publish raw bytes behind the same sandbox fence as `writeText`: a **non-abstract** `FileSystem.writeBytes` whose default body throws, a `fs-local` implementation reusing the atomic-write path undecoded, and a `fs-sandbox` override that runs `checkedTarget` first |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-chmod-primitive.patch` | Adds the `ctx.fs` seam's missing `chmod` mutation: a **non-abstract** `FileSystem.chmod` whose default body throws, a `fs-local` implementation (`chmod.ts`) that applies the bits and **reads them back**, failing when the storage layer accepted the call without applying the mode (the HarmonyOS `hmdfs` user mounts do), and a `fs-sandbox` override that runs `checkedTarget` first |
-| `patches/dsh-v0.2.0-rc.2/dsh-extra-writable-roots.patch` | Teaches `writableRoots()` to honour `DSH_EXTRA_WRITABLE_ROOTS` (a `path.delimiter`-separated list) as deployment state, so a product can grant the user's Desktop/Documents/Download directories once at startup instead of leaving every write inside them to a per-operation escalation |
-| `patches/dsh-v0.2.0-rc.2/dsh-attachment-durable-walk-sandbox.patch` | The attachment store fsyncs every ancestor directory up to the filesystem root, but the HarmonyOS sandbox denies `open()` on `/`, `/data`, `/data/storage` and `/data/storage/el2`. `syncDirectory()` now ends its participation at the first directory the platform refuses to open — matching the existing Windows early return — instead of failing the save |
-| `patches/dsh-v0.2.0-rc.2/dsh-rebrand.patch` | Replaces upstream branding strings (app title, about-page copy, tray label) with `DSH Desktop (HarmonyOS)` for product identity |
+| `patches/dsh-v0.2.1-rc.2/dsh-allow-all-interfaces.patch` | Remove *both* wildcard rejections (loopback isolation requires binding all interfaces + LAN IP): the `--host` CLI guard in `web-app/startup.ts` (and its now-unused `isWildcardHost` import) **and** the wildcard throw inside `WebServer.Config`'s `host` transform, which 0.2.1 added and which the profile-level `webserver.host: 0.0.0.0` override would otherwise hit |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-welcome-notice.patch` | Drop the client's two `settings.onboarding` steps (versioned internal-testing notice + official-DeepSeek API-key prompt) so a first launch enters the app directly, and update `apply.client.spec.ts` to the shipped registration set |
+| `patches/dsh-v0.2.1-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
+| `patches/dsh-v0.2.1-rc.2/dsh-hardlink-to-rename.patch` | HarmonyOS sandbox refuses hard links (`EACCES`) → publish exclusively by same-directory `rename`, keeping the `link`-then-`EEXIST` preference everywhere else (session-log materialization + generation publication) |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-hardlink-fallback.patch` | Also refuses hard links on hmdfs user-directory mounts (`EPERM`, no `.link` handler) → `writeFileAtomic`'s guarded-create path falls back to a same-directory `rename` when the target is verified absent, instead of failing the create with `FS_IO_ERROR`. Scoped to `fs-local`; the link preference is unchanged wherever links work |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-remove-primitive.patch` | Adds the `ctx.fs` seam's missing `remove` mutation primitive so a file tool can delete through the same sandbox fence as write/edit: a **non-abstract** `FileSystem.remove` whose default body throws (an abstract member would fail compilation for the six concrete `extends FileSystem` classes), a `fs-local` implementation in its own `remove.ts`, and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-lefthook-postinstall.patch` | Drops dsh's root `postinstall` (the lefthook git-hook installer). It refuses any checkout whose common git config carries `core.worktree` — true of every submodule checkout — so `collect-dsh`'s `pnpm deploy` aborted with `ELIFECYCLE`. Git hooks are irrelevant to a shipped HAP, and the installer never succeeded here (`dsh-hooks/` is absent) |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-write-bytes.patch` | Adds the `ctx.fs` seam's missing `writeBytes` mutation so a file tool can publish raw bytes behind the same sandbox fence as `writeText`: a **non-abstract** `FileSystem.writeBytes` whose default body throws, a `fs-local` implementation reusing the atomic-write path undecoded, and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-chmod-primitive.patch` | Adds the `ctx.fs` seam's missing `chmod` mutation: a **non-abstract** `FileSystem.chmod` whose default body throws, a `fs-local` implementation (`chmod.ts`) that applies the bits and **reads them back**, failing when the storage layer accepted the call without applying the mode (the HarmonyOS `hmdfs` user mounts do), and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.2.1-rc.2/dsh-extra-writable-roots.patch` | Teaches `writableRoots()` to honour `DSH_EXTRA_WRITABLE_ROOTS` (a `path.delimiter`-separated list) as deployment state, so a product can grant the user's Desktop/Documents/Download directories once at startup instead of leaving every write inside them to a per-operation escalation |
+| `patches/dsh-v0.2.1-rc.2/dsh-attachment-durable-walk-sandbox.patch` | The attachment store fsyncs every ancestor directory up to the filesystem root, but the HarmonyOS sandbox denies `open()` on `/`, `/data`, `/data/storage` and `/data/storage/el2`. `syncDirectory()` now ends its participation at the first directory the platform refuses to open — matching the existing Windows early return — instead of failing the save |
+| `patches/dsh-v0.2.1-rc.2/dsh-rebrand.patch` | Replaces upstream branding strings (app title, about-page copy, tray label) with `DSH Desktop (HarmonyOS)` for product identity |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
 ```bash
-git clone --branch dsh-v0.2.0-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.2.1-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout ba73a3988bb3eee82295a695d59be59563637350  # dshmarket 1.66.21 (asserted at build time)
 # ../harmonypc-electron is the Electron-on-HarmonyOS runtime project; extract the Electron 37 build artifacts to supply the 3 SOs
 ```
@@ -529,7 +529,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 - Upload the signed App Pack: `build\outputs\default\*-signed.app`.
 - Optionally upload `build\outputs\default\symbol\release\app-symbol.zip` so crash reports can be
   symbolicated.
-- `versionCode` (currently `1007`) must be a number and must **strictly increase** on every subsequent
+- `versionCode` (currently `1009`) must be a number and must **strictly increase** on every subsequent
   submission — see [Compatibility](#compatibility).
 - There is **no separate PC/2-in-1 review track** in the official review guide. At submission, if the
   package supports PC/2-in-1 but the configured distribution devices do not include it, AGC prompts you

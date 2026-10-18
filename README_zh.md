@@ -10,14 +10,14 @@
 <p align="center"><sub><b>真机实拍，不是效果图</b> —— HarmonyOS 6.1.0.135（API 24），2in1。界面就是官方 dsh Web UI，由进程内 dsh Host 同源加载。</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-0.2.0-4D6BFE" alt="版本">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.0--rc.2-7C5CFF" alt="dsh 版本">
+  <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="版本">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.2-7C5CFF" alt="dsh 版本">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
 </p>
 
-**状态** `0.2.0`（`versionCode` 1007）—— 已构建并签名；核心链路在 HarmonyOS 6.1.0.135（API 24）真机验证通过：对话、Agent 循环、工具调用、会话持久化、插件市场、窗口状态。先把分发现实说清楚：**debug 签名的 HAP 绑定签名账号/设备**，**release 签名的包只能经 AppGallery 分发** —— 见[怎么获取](#怎么获取)。
+**状态** `0.2.1`（`versionCode` 1009）—— 已构建并签名。核心链路（对话、Agent 循环、工具调用、会话持久化、插件市场、窗口状态）的 HarmonyOS 6.1.0.135（API 24）真机验证是在 **0.2.0** 上完成的；**0.2.1** 尚未重新做真机验证（目前仅验证构建与签名）。先把分发现实说清楚：**debug 签名的 HAP 绑定签名账号/设备**，**release 签名的包只能经 AppGallery 分发** —— 见[怎么获取](#怎么获取)。
 
 ## 为什么这条路线不一样
 
@@ -74,7 +74,7 @@
 
 | 外壳版本 | dsh（上游 tag） | 运行时 | 设备 / API | 验证程度 |
 |---|---|---|---|---|
-| `0.2.0` · `versionCode` 1007 | `dsh-v0.2.0-rc.2` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 核心链路真机验证通过 |
+| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.2` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 已构建并签名；真机复验待做（0.2.0 已验证） |
 
 `versionCode` 必须为数字，且每次向 AppGallery 提交都必须**严格递增**。上游 dsh 处于 developer preview：一个外壳钉一个 tag，`patches/<dsh-tag>/` 随之迁移。
 
@@ -100,7 +100,7 @@
 
 让这张图成立的是三处鸿蒙适配，每一处都对应一个写清了根因的 patch：
 
-1. **loopback 网络隔离。** 鸿蒙 NEXT 下渲染进程访问不了 `127.0.0.1`，因此 webserver 绑 `0.0.0.0`、渲染进程走局域网 IP 建连；同时在内嵌渲染进程请求出栈前把 `Host`/`Origin` 改写回 `127.0.0.1:<port>`，让 dsh 的 loopback-only 特权方法围栏照旧通过。安全语义不变：局域网内其他设备仍然 403。
+1. **loopback 网络隔离。** 鸿蒙 NEXT 下渲染进程访问不了 `127.0.0.1`，因此 webserver 绑 `0.0.0.0`、渲染进程走局域网 IP 建连；同时在内嵌渲染进程请求出栈前把 `Host`/`Origin` 改写回 `127.0.0.1:<port>`，让 dsh 的 loopback-only 特权方法围栏照旧通过。安全说明：监听绑定的是 wildcard 地址，`/api` 会把 bind 字面量当作合法 `Host`，因此局域网内的非浏览器客户端若发送 `Host: 0.0.0.0:<端口>` 且不带 `Origin`，不会被 Host 围栏拦下。故 loopback 围栏并不能把本壳与设备的 Wi-Fi 隔离——请按单用户本地应用对待，勿置于不可信网络。
 2. **禁 symlink、禁 hardlink。** 沙箱两者都拒（`EACCES`/`EPERM`），因此 profile 发布回退 `cpSync`，原子写改为同目录 `rename` 发布（目标已存在则先守卫校验）。
 3. **`os.homedir()` 指向沙箱外。** 启动前把 `HOME` 指向沙箱可写的 `userData` 目录。
 
@@ -110,7 +110,7 @@ dsh 的 webserver 本就在同一端口同时服务 SPA dist 与 `/api`，所以
 
 - **Electron-on-鸿蒙**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
 - **ArkTS / ArkUI**（Stage 模型，`web_engine` HAR 桥接：~46 Adapter + ~44 AdapterBind）
-- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.2.0-rc.2`**，其补丁位于 `patches/dsh-v0.2.0-rc.2/`
+- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.2.1-rc.2`**，其补丁位于 `patches/dsh-v0.2.1-rc.2/`
 - **dsh-market**（同级目录 `../dsh-market`，npm 包 `dshmarket`，内置插件市场）
 - **hvigor / DevEco Studio**（HAP 构建 + 签名）
 
@@ -235,28 +235,28 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 
 > **构建后签名断言。** 构建成功后，`build-hap.ps1` 用 SDK 的 `hap-sign-tool verify-app` 解出产物内嵌 provisioning profile 的 `type`，与请求的 `-SignMode` 比对；不一致即醒目报错并非零退出。（`.p7b` 是二进制，故用 Latin-1 逐字节映射 + 括号配平定位其中的 profile JSON。）此守卫的存在原因：本项目曾出现 release 构建被静默用 debug 材料签名。
 
-> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.2.0-rc.2`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.2.0-rc.2/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
+> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.2.1-rc.2`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.2.1-rc.2/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
 
 | Patch | 目的 |
 |---|---|
-| `patches/dsh-v0.2.0-rc.2/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-welcome-notice.patch` | 移除客户端两步 `settings.onboarding`（版本化内测声明 + 官方 DeepSeek API Key 引导），首启直接进入应用；同步更新 `apply.client.spec.ts` 以匹配实际注册集 |
-| `patches/dsh-v0.2.0-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
-| `patches/dsh-v0.2.0-rc.2/dsh-hardlink-to-rename.patch` | 鸿蒙沙箱禁硬链接（`EACCES`）→ 以同目录 `rename` 独占发布，其余环境仍保持 `link` 优先 + `EEXIST` 语义（会话日志首次落盘 + 代际发布） |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-hardlink-fallback.patch` | hmdfs 用户目录挂载同样禁硬链接（`EPERM`，目录 inode 无 `.link` 处理器）→ `writeFileAtomic` 的守卫式新建在**已确认目标不存在**时回退为同目录 `rename`，不再以 `FS_IO_ERROR` 直接失败。仅作用于 `fs-local`；硬链接可用之处仍保持 link 优先 |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-remove-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `remove` 变更原语，使文件工具能经与 write/edit **同一道沙箱围栏**删除：`FileSystem.remove` 为**非抽象**、默认体抛错的实现（若设为 abstract，6 个 `extends FileSystem` 的具体类会编译失败）、`fs-local` 在独立 `remove.ts` 中实现、`fs-sandbox` 覆写先过 `checkedTarget` |
-| `patches/dsh-v0.2.0-rc.2/dsh-disable-lefthook-postinstall.patch` | 移除 dsh 根 `postinstall`（lefthook git 钩子安装器）。它拒绝任何共享 git 配置含 `core.worktree` 的检出——而 **submodule 检出必然如此**——导致 `collect-dsh` 内的 `pnpm deploy` 以 `ELIFECYCLE` 失败。git 钩子对 HAP 产物毫无意义，且该安装器在本检出中从未成功过（`dsh-hooks/` 不存在） |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-write-bytes.patch` | 给 `ctx.fs` seam 补上缺失的 `writeBytes` 变更原语，使文件工具能经与 `writeText` 相同的沙箱围栏发布原始字节：**非抽象**的 `FileSystem.writeBytes`（默认体抛错）、`fs-local` 沿原子写路径不做解码地实现、`fs-sandbox` 覆写先走 `checkedTarget` |
-| `patches/dsh-v0.2.0-rc.2/dsh-fs-chmod-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `chmod` 变更原语：**非抽象**的 `FileSystem.chmod`（默认体抛错）、`fs-local` 实现（`chmod.ts`）在应用权限位后**回读校验**、当存储层「接受调用但不落实模式」时报错（鸿蒙 `hmdfs` 用户挂载即如此）、`fs-sandbox` 覆写先走 `checkedTarget` |
-| `patches/dsh-v0.2.0-rc.2/dsh-extra-writable-roots.patch` | 让 `writableRoots()` 把 `DSH_EXTRA_WRITABLE_ROOTS`（`path.delimiter` 分隔）当作部署期状态一并纳入可写根，使产品能在启动时一次性授予用户的 Desktop / Documents / Download 目录，而不必让其中每次写入都过一次提权审批 |
-| `patches/dsh-v0.2.0-rc.2/dsh-attachment-durable-walk-sandbox.patch` | 附件存储会逐级 fsync 直到文件系统根，但鸿蒙沙箱拒绝 `open()` `/`、`/data`、`/data/storage`、`/data/storage/el2`。`syncDirectory()` 改为在平台拒绝打开的第一级就结束本层参与（与既有的 Windows 早退同模式），而不是让保存失败 |
-| `patches/dsh-v0.2.0-rc.2/dsh-rebrand.patch` | 将上游品牌字符串（应用标题、关于页文案、托盘标签）替换为 `DSH Desktop (HarmonyOS)`，确立产品身份 |
+| `patches/dsh-v0.2.1-rc.2/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-welcome-notice.patch` | 移除客户端两步 `settings.onboarding`（版本化内测声明 + 官方 DeepSeek API Key 引导），首启直接进入应用；同步更新 `apply.client.spec.ts` 以匹配实际注册集 |
+| `patches/dsh-v0.2.1-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
+| `patches/dsh-v0.2.1-rc.2/dsh-hardlink-to-rename.patch` | 鸿蒙沙箱禁硬链接（`EACCES`）→ 以同目录 `rename` 独占发布，其余环境仍保持 `link` 优先 + `EEXIST` 语义（会话日志首次落盘 + 代际发布） |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-hardlink-fallback.patch` | hmdfs 用户目录挂载同样禁硬链接（`EPERM`，目录 inode 无 `.link` 处理器）→ `writeFileAtomic` 的守卫式新建在**已确认目标不存在**时回退为同目录 `rename`，不再以 `FS_IO_ERROR` 直接失败。仅作用于 `fs-local`；硬链接可用之处仍保持 link 优先 |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-remove-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `remove` 变更原语，使文件工具能经与 write/edit **同一道沙箱围栏**删除：`FileSystem.remove` 为**非抽象**、默认体抛错的实现（若设为 abstract，6 个 `extends FileSystem` 的具体类会编译失败）、`fs-local` 在独立 `remove.ts` 中实现、`fs-sandbox` 覆写先过 `checkedTarget` |
+| `patches/dsh-v0.2.1-rc.2/dsh-disable-lefthook-postinstall.patch` | 移除 dsh 根 `postinstall`（lefthook git 钩子安装器）。它拒绝任何共享 git 配置含 `core.worktree` 的检出——而 **submodule 检出必然如此**——导致 `collect-dsh` 内的 `pnpm deploy` 以 `ELIFECYCLE` 失败。git 钩子对 HAP 产物毫无意义，且该安装器在本检出中从未成功过（`dsh-hooks/` 不存在） |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-write-bytes.patch` | 给 `ctx.fs` seam 补上缺失的 `writeBytes` 变更原语，使文件工具能经与 `writeText` 相同的沙箱围栏发布原始字节：**非抽象**的 `FileSystem.writeBytes`（默认体抛错）、`fs-local` 沿原子写路径不做解码地实现、`fs-sandbox` 覆写先走 `checkedTarget` |
+| `patches/dsh-v0.2.1-rc.2/dsh-fs-chmod-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `chmod` 变更原语：**非抽象**的 `FileSystem.chmod`（默认体抛错）、`fs-local` 实现（`chmod.ts`）在应用权限位后**回读校验**、当存储层「接受调用但不落实模式」时报错（鸿蒙 `hmdfs` 用户挂载即如此）、`fs-sandbox` 覆写先走 `checkedTarget` |
+| `patches/dsh-v0.2.1-rc.2/dsh-extra-writable-roots.patch` | 让 `writableRoots()` 把 `DSH_EXTRA_WRITABLE_ROOTS`（`path.delimiter` 分隔）当作部署期状态一并纳入可写根，使产品能在启动时一次性授予用户的 Desktop / Documents / Download 目录，而不必让其中每次写入都过一次提权审批 |
+| `patches/dsh-v0.2.1-rc.2/dsh-attachment-durable-walk-sandbox.patch` | 附件存储会逐级 fsync 直到文件系统根，但鸿蒙沙箱拒绝 `open()` `/`、`/data`、`/data/storage`、`/data/storage/el2`。`syncDirectory()` 改为在平台拒绝打开的第一级就结束本层参与（与既有的 Windows 早退同模式），而不是让保存失败 |
+| `patches/dsh-v0.2.1-rc.2/dsh-rebrand.patch` | 将上游品牌字符串（应用标题、关于页文案、托盘标签）替换为 `DSH Desktop (HarmonyOS)`，确立产品身份 |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 
 ```bash
-git clone --branch dsh-v0.2.0-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.2.1-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout d4f7a7962d1160e8d5d09fd9ab7f8669bad3ccd9  # dshmarket 1.66.7（构建期断言）
 # ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
 ```
@@ -497,7 +497,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 
 - 上传已签名的 App Pack：`build\outputs\default\*-signed.app`。
 - 可选上传 `build\outputs\default\symbol\release\app-symbol.zip`，以便崩溃报告可符号化。
-- `versionCode`（当前 `1007`）必须为数字，且每次后续提交必须**严格递增** —— 见[兼容矩阵](#兼容矩阵)。
+- `versionCode`（当前 `1009`）必须为数字，且每次后续提交必须**严格递增** —— 见[兼容矩阵](#兼容矩阵)。
 - 官方审核指南中**没有** PC/2in1 独立审核赛道。提交时若软件包支持 PC/2in1 但「配置支持设备」未包含它，AGC 会提示更新支持的设备。
 
 > **待确认：** AppGallery 上架本身的端到端审核时长（上文只记录了 ACL 审核约 3 个工作日），以及发布准备的确切材料清单 —— 两者都需在首次提交前从 AGC 页面确认。
