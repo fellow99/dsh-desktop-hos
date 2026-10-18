@@ -2,7 +2,7 @@
 
 **项目名称：** dsh-desktop-hos
 **版本：** N/A
-**技术栈：** Electron-on-鸿蒙（Electron 37 / Node 22.17.0）+ ArkTS + HarmonyOS（封装 deepseek-harness）
+**技术栈：** Electron-on-HarmonyOS（Electron 37 / Node 22.17.0）+ ArkTS + HarmonyOS（封装 deepseek-harness）
 **文档生成时间：** 2026-09-04
 **最后更新：** 2026-09-18
 
@@ -108,7 +108,7 @@
 
 ### 007 — 运行时入口（runtime-entry）
 
-> electron 入口模块：EntryAbility 启动 Electron-on-鸿蒙运行时，承载 5 个原生 SO。
+> electron 入口模块：EntryAbility 启动 Electron-on-HarmonyOS 运行时，承载 5 个原生 SO。
 
 | 文档 | 链接 | 说明 |
 |------|------|------|

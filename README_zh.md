@@ -1,11 +1,11 @@
 [English](./README.md) | 中文
 
-# DSH Desktop（HarmonyOS 版）
+# DSH Desktop · Electron on HarmonyOS Edition
 
-> 官方 DeepSeek Harness（DSH）Web UI，**零改动**，通过 Electron 37 跑在鸿蒙 2in1 / 平板上——这是一个真正的 Electron 应用，而不是把界面用 ArkUI 重写一遍。
+> **Electron on HarmonyOS Edition** —— 官方 DeepSeek Harness（DSH）Web UI，**零改动**，通过 Electron 37 跑在鸿蒙 2in1 / 平板上：这是一个真正的 Electron 应用，而不是把界面用 ArkUI 重写一遍。鸿蒙端的另一个 edition 是 [HarmonyOS Edition](https://github.com/fellow99/dsh-desktop-ark)：完全不含 Electron —— 系统 ArkWeb + 进程内 Node 运行时。
 
 <p align="center">
-  <img src="docs/images/home-light.png" alt="DSH Desktop 鸿蒙版——官方 dsh Web UI 的新会话页" width="100%">
+  <img src="docs/images/home-light.png" alt="DSH Desktop（Electron on HarmonyOS Edition）——官方 dsh Web UI 的新会话页" width="100%">
 </p>
 <p align="center"><sub><b>真机实拍，不是效果图</b> —— HarmonyOS 6.1.0.135（API 24），2in1。界面就是官方 dsh Web UI，由进程内 dsh Host 同源加载。</sub></p>
 
@@ -30,7 +30,7 @@
 | 运行时权限 | 需要 ACL 受限权限 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（JIT）——**仅 2in1 / 平板** | 无 JIT，因此不需要该权限 |
 | 设备覆盖 | 鸿蒙 2in1 / 平板 | 可延伸到手机 |
 
-两者不存在谁更好，只是优化目标不同。本工程存在的意义是把 Electron 路线端到端跑通——包括它撞到的每一处沙箱冲突。桌面版（同一架构、同一条数据面）在 [dsh-desktop](https://github.com/fellow99/dsh-desktop)。
+两者不存在谁更好，只是优化目标不同。本工程存在的意义是把 Electron 路线端到端跑通——包括它撞到的每一处沙箱冲突。另外两个 edition 共用同一套外壳架构与同一条数据面：[dsh-desktop](https://github.com/fellow99/dsh-desktop)（Windows / Linux / macOS），以及 [dsh-desktop-ark](https://github.com/fellow99/dsh-desktop-ark) 的 **HarmonyOS Edition**（系统 ArkWeb + 进程内 Node 运行时，不用 Electron）。
 
 ## 现在能用的
 
@@ -82,7 +82,7 @@
 
 ```
 ┌─ 鸿蒙 HAP ──────────────────────────────────────────────────────┐
-│  electron 模块（entry）：EntryAbility 启动 Electron-on-鸿蒙运行时 │
+│  electron 模块（entry）：EntryAbility 启动 Electron 运行时        │
 │  web_engine 模块（HAR）：ArkTS 桥接层 + resfile 承载 dsh 产物     │
 │         ┌─ Electron 主进程（Node.js，承载 dsh Host）────────────┐│
 │         │  main.js: 解压 dsh-dist.tar.gz → runProfile('desktop')││
@@ -108,7 +108,7 @@ dsh 的 webserver 本就在同一端口同时服务 SPA dist 与 `/api`，所以
 
 ## 技术栈
 
-- **Electron-on-鸿蒙**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
+- **Electron-on-HarmonyOS**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
 - **ArkTS / ArkUI**（Stage 模型，`web_engine` HAR 桥接：~46 Adapter + ~44 AdapterBind）
 - **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.2.1-rc.2`**，其补丁位于 `patches/dsh-v0.2.1-rc.2/`
 - **dsh-market**（同级目录 `../dsh-market`，npm 包 `dshmarket`，内置插件市场）
@@ -258,7 +258,7 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 ```bash
 git clone --branch dsh-v0.2.1-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone https://github.com/dsh-market/dsh-market.git ../dsh-market && git -C ../dsh-market checkout d4f7a7962d1160e8d5d09fd9ab7f8669bad3ccd9  # dshmarket 1.66.7（构建期断言）
-# ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
+# ../harmonypc-electron 为 Electron-on-HarmonyOS 运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
 ```
 
 `collect-runtime.mjs` 校验 3 个 SO（`libelectron.so`/`libadapter.so`/`libffmpeg.so`）缺失即报错；`collect-dsh.mjs` 在 `../dsh-market` 缺失时硬失败（打包产物内置 `dsh-dist/node_modules/dshmarket`）。
@@ -522,7 +522,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 │   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）
 │   └── specs/                     # 规范文档（as-built；见 specs/README.md 索引）
 │
-├── harmonypc-electron/            # Electron-on-鸿蒙运行时（Electron 37 / Node 22.17.0）
+├── harmonypc-electron/            # Electron-on-HarmonyOS 运行时（Electron 37 / Node 22.17.0）
 │   └── ohos_hap/                  # electron + web_engine 模块 + SO 源（collect-runtime copy 源）
 │
 ├── deepseek-harness/              # 被封装宿主（dsh，源码引用，非 submodule）
@@ -549,9 +549,10 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（同级目录 `../deepseek-harness`）—— 被封装宿主；其 `docs/` 目录含完整架构文档
 - [dsh-market](https://github.com/dsh-market/dsh-market)（同级目录 `../dsh-market`）—— 内置插件市场（npm 包 `dshmarket`），经 `collect-dsh.mjs` 物化
-- [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-鸿蒙运行时
+- [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-HarmonyOS 运行时
 - [dsh-desktop](https://github.com/fellow99/dsh-desktop)（同级目录 `../dsh-desktop`）—— 架构设计参考（Electron 桌面壳）
-- [DSH Desktop 官网](https://fellow99.github.io/dsh-desktop-website/) —— 两个版本的实拍截图与架构说明
+- [dsh-desktop-ark](https://github.com/fellow99/dsh-desktop-ark)（同级目录 `../dsh-desktop-ark`）—— **HarmonyOS Edition**：同一个 dsh Host 跑在 `ohos-node-bridge`（进程内 Node v24.2.0）上，由系统 ArkWeb 渲染，不含 Electron
+- [DSH Desktop 官网](https://fellow99.github.io/dsh-desktop-website/) —— 各 edition 的说明、真机实拍与架构讲解
 
 ## 许可证
 

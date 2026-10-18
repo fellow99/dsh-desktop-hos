@@ -1,8 +1,8 @@
 [中文](./README_zh.md) | English
 
-# DSH Desktop (HarmonyOS)
+# DSH Desktop · Electron on HarmonyOS Edition
 
-> The official DeepSeek Harness (DSH) Web UI, **unmodified**, running on HarmonyOS 2in1 / tablet through Electron 37 — a real Electron app on HarmonyOS, not an ArkUI rewrite of the interface.
+> **Electron on HarmonyOS Edition** — the official DeepSeek Harness (DSH) Web UI, **unmodified**, running on HarmonyOS 2in1 / tablet through Electron 37: a real Electron app on HarmonyOS, not an ArkUI rewrite of the interface. The other HarmonyOS edition, [HarmonyOS Edition](https://github.com/fellow99/dsh-desktop-ark), drops Electron entirely — system ArkWeb plus an in-process Node runtime.
 
 <p align="center">
   <img src="docs/images/home-light.png" alt="DSH Desktop on HarmonyOS — a new session in the official dsh Web UI" width="100%">
@@ -30,7 +30,7 @@ There are other ways to get DSH onto HarmonyOS. The trade-off is the whole story
 | Runtime permission | Requires the ACL restricted permission `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` (JIT) — **2in1 / tablet only** | No JIT, so no such permission |
 | Device reach | HarmonyOS 2in1 / tablet | Can extend to phones |
 
-Neither is "better"; they optimize different things. This repo exists to prove the Electron route end-to-end — including every sandbox conflict it hits. The desktop edition (same architecture, same data plane) is [dsh-desktop](https://github.com/fellow99/dsh-desktop).
+Neither is "better"; they optimize different things. This repo exists to prove the Electron route end-to-end — including every sandbox conflict it hits. The other editions share the same shell architecture and data plane: [dsh-desktop](https://github.com/fellow99/dsh-desktop) for Windows / Linux / macOS, and [dsh-desktop-ark](https://github.com/fellow99/dsh-desktop-ark) for the **HarmonyOS Edition** (system ArkWeb + an in-process Node runtime, no Electron).
 
 ## What works today
 
@@ -588,7 +588,8 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 - [dsh-market](https://github.com/dsh-market/dsh-market) (sibling directory `../dsh-market`) — the built-in visual plugin marketplace (npm package `dshmarket`), materialized via `collect-dsh.mjs`
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron) (sibling directory `../harmonypc-electron`) — the Electron-on-HarmonyOS runtime
 - [dsh-desktop](https://github.com/fellow99/dsh-desktop) (sibling directory `../dsh-desktop`) — architecture-design reference (Electron desktop shell)
-- [DSH Desktop website](https://fellow99.github.io/dsh-desktop-website/) — both editions, real device screenshots, and the architecture story in one page
+- [dsh-desktop-ark](https://github.com/fellow99/dsh-desktop-ark) (sibling directory `../dsh-desktop-ark`) — the **HarmonyOS Edition**: same dsh Host on `ohos-node-bridge` (in-process Node v24.2.0), rendered by the system ArkWeb, no Electron
+- [DSH Desktop website](https://fellow99.github.io/dsh-desktop-website/) — all three editions, real device screenshots, and the architecture story in one page
 
 ## License
 
