@@ -165,7 +165,8 @@ Prefer keeping artifacts inside the workspace and telling the user where they ar
 | `read` / `write` / `edit` on files | available (workspace) |
 | `str_replace_editor` (`view` lists directories) | available |
 | `web_search` / `web_fetch` | available |
-| `skill`, `todo_write`, goals, subagents, workflows, `present` | available |
+| `skill`, `todo_write`, goals, subagents, `present` | available |
+| `workflow` / `ralph` | absent (0.2.x disables `workflow-ptc` / `tool-workflow`: the PTC engine needs a subprocess/sandbox this platform cannot provide) |
 | `bash` command execution | **available** (non-PTY resident `sh`; the path fence is best-effort, not a sandbox) |
 | `pwsh` (PowerShell) | absent (Windows-only) |
 | PTY terminal / persistent shell | absent (no aarch64 `node-pty` artifact) |
