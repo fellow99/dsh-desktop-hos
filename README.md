@@ -42,13 +42,14 @@ Neither is "better"; they optimize different things. This repo exists to prove t
 | Window state persistence (maximized / bounds) + F11 fullscreen | ✅ |
 | Command execution — non-PTY resident `/system/bin/sh` driven by a sentinel-line protocol, with a tool-layer path fence | ✅ ⚠️ the fence is **best-effort and bypassable, not a sandbox** |
 | Image attachments — `sharp` replaced by a pure-JS container parser; conversions it cannot do are routed through the platform image framework by an ArkTS bridge (decode / EXIF / scale / re-encode) | ⚠️ clean 8-bit sRGB files pass through byte-identically; with no bridge reachable every conversion is refused with an explicit error; no thumbnails |
-| Bundling our own Node / pnpm / Python runtime | ⛔ **not possible** — shipping an ELF requires a binary certificate (AGC `certType: 4`), which Huawei does not grant to individual developers. The host installing `pnpm` from the system terminal is an **optional dependency, never a product capability** |
+| Bundling our own Node / Python runtime (ELF) | ⛔ **not possible** — shipping an ELF requires a binary certificate (AGC `certType: 4`), which Huawei does not grant to individual developers |
+| Bundling the pure-JS **pnpm** engine (plugin market) | ✅ pnpm 10.34.6 runs in-process (`dsh-market-pnpm` in a worker via `harmony-plugin-market-runtime`) — no ELF, no terminal install; market install/uninstall verified on device |
 | Process sandbox (`koffi` / landlock) | ❌ out of scope |
 
 ### Limits, in detail
 
 - **Command execution.** Upstream's `tool-bash` row stays disabled: `node-pty` has no aarch64 artifact, and PTY is denied by SELinux. The replacement spawns a resident `/system/bin/sh` and reads replies through a sentinel line; the path fence lives in the tool layer and is **bypassable by design**.
-- **Bundled runtime.** The app already sees `/data/service/hnp/bin` on `PATH` and a structurally valid `node` lives there — only `pnpm` is missing. Once the user installs `pnpm` **from the system terminal** (the symlink ban is app-domain-only, so it must not be installed from inside the app), the marketplace's `probePnpm()` succeeds and plugin install/uninstall works. Nothing else depends on a bundled runtime: command execution spawns the system's own `sh`/`toybox`, and the file / search / skill / subagent / workflow / image features are pure JS. Analysis: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.
+- **Bundled runtime.** Shipping our own Node or Python **ELF binary** remains impossible (binary certificate). What *is* shipped today is the pure-JavaScript **pnpm 10.34.6** engine, materialized into `dsh-dist/node_modules/dsh-market-pnpm` and executed inside a worker thread by `harmony-plugin-market-runtime` (`DSH_PNPM_ENGINE`); plugin-market install/uninstall therefore needs no system-terminal step (device-verified). Nothing else depends on a bundled runtime: command execution spawns the system's own `sh`/`toybox`, and the file / search / skill / subagent / image features are pure JS. (Historical analysis of the ELF restriction: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.)
 - **Images.** The stub parses PNG/JPEG/GIF/WebP container headers; anything it cannot convert is handed to the ArkTS bridge (decode, EXIF orientation, scale, re-encode to JPEG/WebP/PNG). Clean 8-bit sRGB input inside the limits passes through byte-identically at zero conversion cost. With no bridge reachable (plain Node), every conversion is refused with an explicit, attributed error. No thumbnails.
 
 Deferred by decision, not by oversight: the frameless window (moving window controls into the renderer costs more than it buys) and launch-at-login (`autoStartupManager` exposes read-only queries only). The system tray ships today — status-bar icon plus right-click menu.
@@ -124,7 +125,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── scripts/                   # Four-stage build: collect-runtime → build-dsh → collect-dsh, plus build-debug / build-release
 │   ├── runtime-overlays/          # App customizations re-applied after every runtime copy (prune + overlay)
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (14)
+│   ├── patches/                   # dsh upstream patches (13 for 0.2.1)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
 │   ├── skills/                    # This project's own tool skills (kebab-case, no prefix; shipped in the HAP as the bundled skill root)

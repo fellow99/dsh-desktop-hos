@@ -42,13 +42,14 @@
 | 窗口状态记忆（最大化 / 位置尺寸）+ F11 全屏 | ✅ |
 | 命令执行：非 PTY 的常驻 `/system/bin/sh`，哨兵行协议驱动，工具层路径围栏 | ✅ ⚠️ 围栏是 **best-effort，可被绕过，不是沙箱** |
 | 图片附件：`sharp` 由纯 JS 容器头解析替代，做不了的转换经 ArkTS 桥交给平台图像框架（解码 / EXIF / 缩放 / 重编码） | ⚠️ 干净的 8-bit sRGB 文件按字节原样通过；取不到桥时每次转换都如实拒绝；无缩略图 |
-| 随包自带 Node / pnpm / Python 运行时 | ⛔ **不可实现** —— 分发 ELF 需要二进制证书（AGC `certType: 4`），华为不授予个人开发者。用户自行在系统终端安装 `pnpm` 属**可选依赖，绝不作产品能力宣传** |
+| 随包自带 Node / Python 运行时（ELF） | ⛔ **不可实现** —— 分发 ELF 需要二进制证书（AGC `certType: 4`），华为不授予个人开发者 |
+| 随包纯 JS **pnpm** 引擎（插件市场） | ✅ pnpm 10.34.6 进程内运行（`dsh-market-pnpm`，经 `harmony-plugin-market-runtime` 在 worker 中执行）——非 ELF、无需终端安装；市场装/卸真机通过 |
 | 进程沙箱（`koffi` / landlock） | ❌ 不在范围内 |
 
 ### 限制的具体原因
 
 - **命令执行。** 上游 `tool-bash` 行保持 disabled：`node-pty` 无 aarch64 产物，且 PTY 被 SELinux 拒绝。替代方案是常驻 `/system/bin/sh` + 哨兵行读取；路径围栏在工具层，**设计上就是可绕过的**。
-- **自带运行时。** 应用已能在 `PATH` 上看到 `/data/service/hnp/bin`，那里有结构校验通过的 `node`，只缺 `pnpm`。用户在**系统终端**装好 `pnpm` 后（symlink 禁令仅限应用域，故**不得**在应用内安装），市场 `probePnpm()` 即通过，插件安装/卸载可用。其余能力都不依赖自带运行时：命令执行 spawn 系统自带 `sh`/`toybox`，文件 / 搜索 / 技能 / 子 agent / workflow / 图片均为纯 JS。分析见 [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8。
+- **自带运行时。** 随包自带 Node/Python **ELF 二进制**仍不可行（二进制证书）。现在随包的是纯 JavaScript **pnpm 10.34.6** 引擎：物化到 `dsh-dist/node_modules/dsh-market-pnpm`，由 `harmony-plugin-market-runtime` 在 worker 线程内执行（`DSH_PNPM_ENGINE`），插件市场装/卸无需系统终端步骤（真机验证）。其余能力都不依赖自带运行时：命令执行 spawn 系统自带 `sh`/`toybox`，文件 / 搜索 / 技能 / 子 agent / 图片均为纯 JS。（ELF 限制的历史分析见 [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8。）
 - **图片。** stub 解析 PNG/JPEG/GIF/WebP 容器头；无法自行完成的转换交给 ArkTS 桥（解码、EXIF 方向、缩放、重编码为 JPEG/WebP/PNG）。限额内且本就干净的 8-bit sRGB 输入按字节原样通过、零转换成本。取不到桥时（纯 Node），每次转换都如实拒绝并注明边界。无缩略图。
 
 二期被评估后**主动放弃**：无边框窗口（把窗口控制移进渲染层，代价与收益不成比例）与开机自启（`autoStartupManager` 只有只读查询）。系统托盘已交付——状态栏图标 + 右键菜单。
@@ -124,7 +125,7 @@ hdc app install -r entry/build/default/outputs/default/entry-default-signed.hap
 │   ├── scripts/                   # 四阶段构建：collect-runtime → build-dsh → collect-dsh，外加 build-debug / build-release
 │   ├── runtime-overlays/          # 每次运行时 copy 后重新施加的应用定制（prune + overlay）
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（14 个）
+│   ├── patches/                   # dsh 上游 patch（0.2.1：13 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
 │   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）
