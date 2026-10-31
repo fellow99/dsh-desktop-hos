@@ -5,7 +5,7 @@
 > 排查日期：2026-09-29
 > 结论一句话：**在 DSH 签名包内无法使用 pnpm。** 直接原因是本应用域禁止子进程分配 JIT 可执行内存，任何 node 脚本（npm / corepack / pnpm）一启动就被内核以 `SIGSYS` 杀死；pnpm 装在哪、PATH 怎么配都改变不了这一点。
 
-> **补充结论（2026-10-01 深入分析后）**：上面这句只对「**spawn 子进程**」这条路成立。把 pnpm **纯 JS 版本打入包中、并让 Electron 主进程在进程内调用它**（不 spawn 任何子进程）是**可行**的 —— 本工程 `specs/011-runtime-provisioning/` 的「路径 B」正是这条路线，探测/选路/校验代码（`src-main/market-runtime.js`）已实现并单测通过，只差「进程内调用补丁」未投入。详见本文 §11。
+> **补充结论（2026-10-01 深入分析后）**：上面这句只对「**spawn 子进程**」这条路成立。把 pnpm **纯 JS 版本打入包中、并让 Electron 主进程在进程内调用它**（不 spawn 任何子进程）是**可行**的 —— 本工程 `specs/117-runtime-provisioning/` 的「路径 B」正是这条路线，探测/选路/校验代码（`src-main/market-runtime.js`）已实现并单测通过，只差「进程内调用补丁」未投入。详见本文 §11。
 
 ---
 
@@ -353,7 +353,7 @@ pnpm add <插件包名>            # 可加 --registry https://registry.npmmirro
 >
 > 结论先行：**① 能；② 能，但必须走「进程内调用」而非 spawn（spawn 在鸿蒙平台级不可能）；③ 有明确落点，关键是用 `node-linker=hoisted` 规避 symlink/hardlink 禁令。**
 >
-> 本工程**已有一份完整设计**（`specs/011-runtime-provisioning/`，模块 011）：其中「路径 B（进程内 pnpm JS）」就是本节答案，其探测/选路/完整性校验代码（`src-main/market-runtime.js` 的 `discoverMarketRuntime()`）**已实现并通过 24 项单测**，唯独「进程内调用 pnpm」这一环被标为「暂缓 / 本版未投入」（`plan.md` §11）。因此这不是「能不能」的问题，而是「要投入多少、有哪些硬约束」的问题。本节把这些硬约束与落点一次性讲清，作为将来落地「路径 B」的决策依据。
+> 本工程**已有一份完整设计**（`specs/117-runtime-provisioning/`，模块 011）：其中「路径 B（进程内 pnpm JS）」就是本节答案，其探测/选路/完整性校验代码（`src-main/market-runtime.js` 的 `discoverMarketRuntime()`）**已实现并通过 24 项单测**，唯独「进程内调用 pnpm」这一环被标为「暂缓 / 本版未投入」（`plan.md` §11）。因此这不是「能不能」的问题，而是「要投入多少、有哪些硬约束」的问题。本节把这些硬约束与落点一次性讲清，作为将来落地「路径 B」的决策依据。
 
 ### 11.1 问题一：pnpm 纯 JS 能否打入包中 —— 能
 
@@ -406,7 +406,7 @@ const BUNDLED_PNPM_ENTRY_REL = ['node_modules', BUNDLED_PNPM_PACKAGE, 'lib', 'in
 | **`DesktopPnpmLike.runPlugin(args, invokingDir, signal)`** | `dsh-cli.ts:577-608`，经 `desktopProfiles` 服务特性检测（`index.ts:284-320`） | ✅ **真进程内**：宿主实现，返回句柄（stdout/stderr 流 + done + cancel） | **← 鸿蒙 wrapper 要实现的接缝** |
 | 官方 Electron 路线（`config.profile='desktop'` → `pluginManager` 服务 → `installBundle`） | `official-desktop.ts:36-37`（注释明言「Never fall back to `dsh plugin --profile desktop`」） | ⚠️ 半进程内：`pluginManager` 内部**仍 spawn pnpm**（`operations.ts:357`） | 不够：spawn 仍在 |
 
-**注意**：本工程 harmony profile 的 `cordis.patch.yml:70-74` 已对 dshmarket 注入 `config: { profile: desktop }`。因此若捆绑当前版本的 dshmarket，市场会走**第三条（官方 Electron）路线** → 命中 `pluginManager` → 其内部 `execa` spawn pnpm → 依旧 SIGSYS。**spawn 问题只是「搬了位置」，没有消失。** 要根治，必须让市场走**第二条（`desktopPnpm`）**：wrapper 在 Electron 主进程内实现 `runPlugin`，内部用 `@pnpm/installing.deps-installer` 的 `addDependenciesToPackage`/`removeDependenciesFromPackage`（或 `install`/`mutateModules`）**进程内**装/卸包，把结果映射回市场期望的 `InstallResult` 形状。这正是 `specs/011-runtime-provisioning/plan.md` §11.2 列出的补丁清单（`dshArgv()`/`spawnShim()`/`runDshPlugin()`/`probePnpm()`/`provisionPnpm()` 改为进程内分支）。
+**注意**：本工程 harmony profile 的 `cordis.patch.yml:70-74` 已对 dshmarket 注入 `config: { profile: desktop }`。因此若捆绑当前版本的 dshmarket，市场会走**第三条（官方 Electron）路线** → 命中 `pluginManager` → 其内部 `execa` spawn pnpm → 依旧 SIGSYS。**spawn 问题只是「搬了位置」，没有消失。** 要根治，必须让市场走**第二条（`desktopPnpm`）**：wrapper 在 Electron 主进程内实现 `runPlugin`，内部用 `@pnpm/installing.deps-installer` 的 `addDependenciesToPackage`/`removeDependenciesFromPackage`（或 `install`/`mutateModules`）**进程内**装/卸包，把结果映射回市场期望的 `InstallResult` 形状。这正是 `specs/117-runtime-provisioning/plan.md` §11.2 列出的补丁清单（`dshArgv()`/`spawnShim()`/`runDshPlugin()`/`probePnpm()`/`provisionPnpm()` 改为进程内分支）。
 
 **进程内运行 pnpm 的硬约束（必须一并解决，否则跑不通）：**
 
@@ -450,7 +450,7 @@ const BUNDLED_PNPM_ENTRY_REL = ['node_modules', BUNDLED_PNPM_PACKAGE, 'lib', 'in
 
 ### 11.4 与既有工程的关系 + 落地工作量清单
 
-「路径 B」已完成的（`specs/011-runtime-provisioning` + `src-main/market-runtime.js`）：A/B/C 有序选路、ELF/JS 完整性校验、`dsh` shim 生成、PATH/PNPM_HOME 组装、失败可见性诊断 —— 均已实现并单测通过（`IMPLEMENTATION_NOTES.md` §5.2：24/24 通过）。
+「路径 B」已完成的（`specs/117-runtime-provisioning` + `src-main/market-runtime.js`）：A/B/C 有序选路、ELF/JS 完整性校验、`dsh` shim 生成、PATH/PNPM_HOME 组装、失败可见性诊断 —— 均已实现并单测通过（`IMPLEMENTATION_NOTES.md` §5.2：24/24 通过）。
 
 「路径 B」尚缺的（对应 `plan.md` §11 / T2.6 / T4.2 / T4.3）：
 

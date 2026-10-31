@@ -117,4 +117,4 @@
 | `tests/inventory.test.mjs` | 四类非空互斥、关键成员、`未验证` 披露、`chmod`/`chown` 平台拒绝、描述内容 |
 | `tests/session.test.mjs` | 经注入的假 `spawn` 驱动常驻会话：串行、截断、超时 → 排空 → 重置、取消、stdout 关闭存活判定、spawn 失败、释放 |
 
-会话测试走注入的 `spawn` seam，故设备相关路径无需设备即可覆盖。任何依赖真实 `/system/bin/sh` 的结论保持 `未验证`，列于 `specs/010-tool-bash/test-cases.md` §3。
+会话测试走注入的 `spawn` seam，故设备相关路径无需设备即可覆盖。任何依赖真实 `/system/bin/sh` 的结论保持 `未验证`，列于 `specs/112-tool-bash/test-cases.md` §3。

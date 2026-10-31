@@ -398,7 +398,7 @@ storeDir: .pnpm-store
 `;
 
 /**
- * 012-pnpm-integration：确保 profile 的 `pnpm-workspace.yaml` 存在。
+ * 110-pnpm-integration：确保 profile 的 `pnpm-workspace.yaml` 存在。
  *
  * 只在缺失时创建（不覆盖）：该文件是进程内 pnpm 的引擎配置（hoisted / copy /
  * ignore-scripts / 沙箱内 store），同时**市场会改写它**（release-age 排除、allowBuilds），
@@ -533,12 +533,12 @@ async function startHost() {
   ensureProfilePnpmConfig(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   ensureDshPluginsProfileLink(process.env.DSH_HOME);
-  // 011-runtime-provisioning：运行时供给（探测 A/B/C → 校验 → 生成 dsh shim → 前置 PATH / 设 PNPM_HOME）。
+  // 117-runtime-provisioning：运行时供给（探测 A/B/C → 校验 → 生成 dsh shim → 前置 PATH / 设 PNPM_HOME）。
   // 时序约束：晚于 ensureDshExtracted()（DSH_ROOT 就位，shim 指向 DSH_ROOT/lib/bin.js）与
   // ensureSandboxHome()（HOME 已指向沙箱目录）；早于 runProfile()（dshmarket 的 spawnEnv() 在调用时读
   // process.env.PATH）。失败仅影响市场安装通道，不阻塞启动。
   setupMarketRuntime({ dshRoot: DSH_ROOT });
-  // 012-pnpm-integration：进程内 pnpm 引擎入口。由 collect-dsh 的 collectMarketPNPM() 物化到
+  // 110-pnpm-integration：进程内 pnpm 引擎入口。由 collect-dsh 的 collectMarketPNPM() 物化到
   // dsh-dist/node_modules/pnpm；harmony-plugin-market-runtime 读 DSH_PNPM_ENGINE 在 worker 中 import 它。
   process.env.DSH_PNPM_ENGINE = join(DSH_ROOT, 'node_modules', 'dsh-market-pnpm', 'bin', 'pnpm.cjs');
   console.log('[dsh-harmony] DSH_PNPM_ENGINE =', process.env.DSH_PNPM_ENGINE);

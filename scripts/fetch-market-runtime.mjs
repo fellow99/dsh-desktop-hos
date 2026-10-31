@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 011-runtime-provisioning —— 构建期获取「路径 A」的便携运行时（Node ELF + standalone pnpm）。
+ * 117-runtime-provisioning —— 构建期获取「路径 A」的便携运行时（Node ELF + standalone pnpm）。
  *
  * 定位（**必须读**）：
  *   - 本脚本**不接入默认构建链**（`collect-runtime → build-dsh → collect-dsh` 三阶段不动它）。

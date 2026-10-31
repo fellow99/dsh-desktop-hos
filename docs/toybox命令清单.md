@@ -269,7 +269,7 @@ hdc shell "mkdir -p /data/local/tmp/t && cd /data/local/tmp/t && echo hi > a && 
 
 | 文档 | 原表述 | 处理 | 状态 |
 |---|---|---|---|
-| `specs/010-tool-bash/spec.md` FR-4.2 / §2.3 | C 类（`awk/wget/diff/expr/tr/telnet/traceroute`）标 `未验证` | 改为**本设备实测全部可用**（`toybox_extended_cmd` 已启用） | ✅ 已改 |
+| `specs/112-tool-bash/spec.md` FR-4.2 / §2.3 | C 类（`awk/wget/diff/expr/tr/telnet/traceroute`）标 `未验证` | 改为**本设备实测全部可用**（`toybox_extended_cmd` 已启用） | ✅ 已改 |
 | 同上 FR-4.1 / §2.3 | "B 类含 `base32 blkid nc route reboot sha224sum…`（约 18 项）" | 改为**B 类只有 `nc`**；其余为**悬空软链**或已编译 | ✅ 已改 |
 | 同上 FR-4.1 / FR-4.6 | 未提"悬空软链"与 `command -v` 陷阱 | 补：**42 个悬空软链**；判定必须用 `toybox <n> --help`；`command -v` 返回 alias 而非路径 | ✅ 已改 |
 | 同上 FR-4.6 | "mksh 内建遮蔽 `time test pwd realpath ulimit kill echo printf`"（**过宽，且 `printf` 错**） | 更正为：内建 10 个（`cat echo false kill pwd realpath sleep test true ulimit`）+ 保留字 `time`；**`printf` / `ls` / `grep` / `sed` 不在此列** | ✅ 已改（含显式"上一版不准确"更正） |

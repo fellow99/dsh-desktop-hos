@@ -2,7 +2,7 @@
  * Unit tests for the token-level path fence (`lib/fence.js`).
  *
  * Runs on plain Node; the module is import-free. Covers the fence rows of
- * `specs/010-tool-bash/test-cases.md` §2 (TC-U4..TC-U6) and spec
+ * `specs/112-tool-bash/test-cases.md` §2 (TC-U4..TC-U6) and spec
  * AC-9/AC-10/AC-18/AC-19 — the decision face of AC-11 (fence-before-approval).
  */
 

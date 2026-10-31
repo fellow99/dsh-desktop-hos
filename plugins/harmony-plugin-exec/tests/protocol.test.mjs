@@ -3,7 +3,7 @@
  *
  * Runs on plain Node with the built-in test runner; the module under test is
  * import-free, so no device, shell, or dsh package is needed. Covers the
- * protocol rows of `specs/010-tool-bash/test-cases.md` §2 (TC-U1..TC-U3,
+ * protocol rows of `specs/112-tool-bash/test-cases.md` §2 (TC-U1..TC-U3,
  * TC-U8) and spec AC-6/AC-7/AC-8/AC-12.
  */
 

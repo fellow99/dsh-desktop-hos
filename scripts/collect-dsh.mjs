@@ -26,7 +26,7 @@ const requireBuiltinNode = resolve(projectRoot, 'native/require-builtin/require_
 /**
  * Pinned pure-JS pnpm engine version (spec 012). Materialized by
  * `collectMarketPNPM()` and asserted before it is recorded as ready.
- * See `docs/012-pnpm+dsh-market.md` and `logs/20261002-1/spike-pnpm-FINDINGS.md`.
+ * See `docs/110-pnpm+dsh-market.md` and `logs/20261002-1/spike-pnpm-FINDINGS.md`.
  */
 const PNPM_VERSION = '10.34.6';
 
@@ -820,7 +820,7 @@ function assertPnpmEngineArtifact(dest) {
 /**
  * 物化纯 JS pnpm 引擎（`pnpm` 包）到 `dsh-dist/node_modules/pnpm`（spec 012 FR-012-001~004）。
  *
- * 引擎选型见 docs/012-pnpm+dsh-market.md：采用自带打包 CLI 的 `pnpm` 包（进程内由
+ * 引擎选型见 docs/110-pnpm+dsh-market.md：采用自带打包 CLI 的 `pnpm` 包（进程内由
  * `harmony-plugin-market-runtime` 在 worker 线程中 import 其 `dist/pnpm.mjs`）。
  * 以宿主 pnpm 安装到临时目录后整包拷贝；版本不符即硬失败；幂等。
  */

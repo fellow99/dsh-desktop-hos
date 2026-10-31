@@ -117,4 +117,4 @@ The only runtime dependency beyond the dsh packages is the platform's own `/syst
 | `tests/inventory.test.mjs` | Four disjoint classes, key members, `未验证` disclosure, `chmod`/`chown` platform denial, description content |
 | `tests/session.test.mjs` | Resident session driven through an injected fake `spawn`: serialization, truncation, timeout → drain → reset, cancellation, stdout-close liveness, spawn failure, disposal |
 
-The session test uses the injected `spawn` seam, so the device-dependent paths are exercised without a device. Anything requiring the real `/system/bin/sh` stays `未验证` and is listed in `specs/010-tool-bash/test-cases.md` §3.
+The session test uses the injected `spawn` seam, so the device-dependent paths are exercised without a device. Anything requiring the real `/system/bin/sh` stays `未验证` and is listed in `specs/112-tool-bash/test-cases.md` §3.

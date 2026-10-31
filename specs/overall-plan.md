@@ -87,12 +87,12 @@
 
 | 模块 | plan 文档 |
 |---|---|
-| 001-host | [001-host/plan.md](./001-host/plan.md) |
-| 002-window | [002-window/plan.md](./002-window/plan.md) |
-| 003-lifecycle | [003-lifecycle/plan.md](./003-lifecycle/plan.md) |
-| 004-artifact-bootstrap | [004-artifact-bootstrap/plan.md](./004-artifact-bootstrap/plan.md) |
-| 005-build-pipeline | [005-build-pipeline/plan.md](./005-build-pipeline/plan.md) |
-| 006-runtime-profile | [006-runtime-profile/plan.md](./006-runtime-profile/plan.md) |
-| 007-runtime-entry | [007-runtime-entry/plan.md](./007-runtime-entry/plan.md) |
-| 008-web-bridge | [008-web-bridge/plan.md](./008-web-bridge/plan.md) |
+| 115-host | [115-host/plan.md](./115-host/plan.md) |
+| 103-window-shell | [103-window-shell/plan.md](./103-window-shell/plan.md) |
+| 114-lifecycle-safety | [114-lifecycle-safety/plan.md](./114-lifecycle-safety/plan.md) |
+| 102-payload-pipeline | [102-payload-pipeline/plan.md](./102-payload-pipeline/plan.md) |
+| 111-build-pipeline | [111-build-pipeline/plan.md](./111-build-pipeline/plan.md) |
+| 105-upstream-adapter-bundle | [105-upstream-adapter-bundle/plan.md](./105-upstream-adapter-bundle/plan.md) |
+| 101-runtime-launch-orchestration | [101-runtime-launch-orchestration/plan.md](./101-runtime-launch-orchestration/plan.md) |
+| 104-host-capability-bridge | [104-host-capability-bridge/plan.md](./104-host-capability-bridge/plan.md) |
 | 201-dsh-market | [201-dsh-market/plan.md](./201-dsh-market/plan.md) |

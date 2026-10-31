@@ -23,7 +23,7 @@ dsh-dist.tar.gz
 *.so
 /electron/libs/
 
-# 011-runtime-provisioning：路径 A 便携运行时暂存目录（node/pnpm ELF，由
+# 117-runtime-provisioning：路径 A 便携运行时暂存目录（node/pnpm ELF，由
 # scripts/fetch-market-runtime.mjs 获取，不入库；该脚本不接入默认构建链）
 /runtime/
 

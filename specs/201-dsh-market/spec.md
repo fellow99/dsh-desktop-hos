@@ -1,9 +1,9 @@
 # dsh-market 插件市场 功能规格
 
 > Module: 201-dsh-market
-> Status: Implemented（集成已落地；安装通道随 012 演进）
+> Status: Implemented（集成已落地；安装通道随 110 演进）
 > Last Updated: 2026-10-02
-> 关联模块：[`012-pnpm-integration`](../012-pnpm-integration/)（提供进程内 pnpm 引擎）、[`005-build-pipeline`](../005-build-pipeline/)、[`006-runtime-profile`](../006-runtime-profile/)、[`001-host`](../001-host/)
+> 关联模块：[`110-pnpm-integration`](../110-pnpm-integration/)（提供进程内 pnpm 引擎）、[`111-build-pipeline`](../111-build-pipeline/)、[`105-upstream-adapter-bundle`](../105-upstream-adapter-bundle/)、[`115-host`](../115-host/)
 
 ## 1. 模块概述
 
@@ -17,7 +17,7 @@ dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂�
 
 - **零命令行逛插件市场**：鸿蒙设备用户无需自装 Node/pnpm，即可在设置页看到「插件市场」入口并浏览社区目录。
 - **打包应用的插件市场可用**：普通 `dsh web` 依赖系统 Node/pnpm；打包进 HAP 的鸿蒙应用没有这些运行时，本模块通过「构建期物化 + 运行期复制」把市场产物随 dsh 部署产物一并打入，使市场的前后端 bundle 在设备上可被解析、可被服务。
-- **插件安装/卸载在鸿蒙可用**：市场默认通过 spawn `pnpm`（经 `dsh plugin` 或官方 Electron 的 `pluginManager`）安装插件，而应用域 spawn 出的 node/pnpm 子进程被 `SIGSYS` 杀死。本模块**实现市场已内置的 `desktopProfiles` / `desktopPnpm` 契约**，让市场的安装/卸载走**进程内 pnpm**（引擎由 012 提供），无需改市场源码。
+- **插件安装/卸载在鸿蒙可用**：市场默认通过 spawn `pnpm`（经 `dsh plugin` 或官方 Electron 的 `pluginManager`）安装插件，而应用域 spawn 出的 node/pnpm 子进程被 `SIGSYS` 杀死。本模块**实现市场已内置的 `desktopProfiles` / `desktopPnpm` 契约**，让市场的安装/卸载走**进程内 pnpm**（引擎由 110 提供），无需改市场源码。
 - **profile 正确性**：dsh-market 默认操作 `web` profile，本工程用 `desktop` profile，必须显式注入 profile 名，否则安装/删除会写错目录。
 - **进程生命周期归属**：市场不能擅自在鸿蒙设备上 spawn 独立 dsh 进程重启，须由桌面壳掌控进程生命周期。
 
@@ -29,14 +29,14 @@ dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂�
 - 收集期把市场产物（`package.json` + `cordis.patch.yml` + `lib/` + `client/`，排除源码/测试/devDeps）物化到 `dsh-dist/node_modules/dshmarket`，并递归复制其运行时依赖（`@deepseek-ai` scope 从宿主解析）。
 - 运行期把 dshmarket 复制到 `$DSH_HOME/profiles/node_modules/dshmarket`（复制而非 symlink）。
 - desktop profile 声明 dshmarket 为 bundle 并注入运行配置（`profile: desktop`、`allowRestart: false`）。
-- **插件管理通道**：市场通过宿主提供的 `desktopProfiles` / `desktopPnpm` 契约执行插件的**添加 / 更新 / 配置 / 移除**（进程内 pnpm，引擎来自 012）；市场自身的维护（启用停用、分组、备注、备份/恢复、更新检测）沿用市场既有能力。
-- **市场版本固定**（`1.66.7`）与构建期断言（由 012 的 `assertDshMarketVersion()` 落实）。
+- **插件管理通道**：市场通过宿主提供的 `desktopProfiles` / `desktopPnpm` 契约执行插件的**添加 / 更新 / 配置 / 移除**（进程内 pnpm，引擎来自 110）；市场自身的维护（启用停用、分组、备注、备份/恢复、更新检测）沿用市场既有能力。
+- **市场版本固定**（`1.66.7`）与构建期断言（由 110 的 `assertDshMarketVersion()` 落实）。
 
 **不包含**：
 
 - 修改 dsh-market 或 dsh 的上游源码（沿用「零上游改动」宪法原则；安装通道走市场已内置的契约，不 patch 市场）。
 - dsh-market 自身 UI / 目录拉取 / 备份 / WebDAV / Gist / 诊断等功能的实现（由 dsh-market 提供）。
-- **进程内 pnpm 引擎本身**（物化、调用、`process.exit`/`argv` 防护、profile pnpm 配置）——属 [`012-pnpm-integration`](../012-pnpm-integration/) 的范围，本模块只**消费**其契约。
+- **进程内 pnpm 引擎本身**（物化、调用、`process.exit`/`argv` 防护、profile pnpm 配置）——属 [`110-pnpm-integration`](../110-pnpm-integration/) 的范围，本模块只**消费**其契约。
 - 全局快捷键、开机自启等其它桌面能力。
 
 ## 2. 用户故事
@@ -75,14 +75,14 @@ dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂�
 
 ### 3.5 插件管理通道（desktopProfiles / desktopPnpm 契约）
 
-- FR-201-011：宿主系统 MUST 在 market bundle mount **之前**提供 `desktopProfiles` 服务，使市场通过**特性检测**（`ctx.get('desktopProfiles')`）采用宿主提供的进程内包管理器；该服务由 [`012-pnpm-integration`](../012-pnpm-integration/) 实现。
+- FR-201-011：宿主系统 MUST 在 market bundle mount **之前**提供 `desktopProfiles` 服务，使市场通过**特性检测**（`ctx.get('desktopProfiles')`）采用宿主提供的进程内包管理器；该服务由 [`110-pnpm-integration`](../110-pnpm-integration/) 实现。
 - FR-201-012：宿主 MUST 通过 `desktopPnpm`（实现市场 `DesktopPnpmLike` 接口）提供 `runPlugin(args, invokingDir, signal)`，市场据此执行 `add` / `remove`；实现 MUST 为**进程内**（不 spawn node/pnpm 子进程）。
 - FR-201-013：市场对插件的**添加** MUST 经 `desktopPnpm.runPlugin(['add', '<spec>'], dir)` 完成，并消费返回句柄的 `stdout`/`stderr`/`done`/`cancel`。
 - FR-201-014：市场对插件的**移除** MUST 经 `desktopPnpm.runPlugin(['remove', '<name>'], dir)` 完成，并同步从 `dsh.profile.bundles` 中 reconcile 掉该插件行。
 - FR-201-015：插件的**配置**（`cordis.patch.yml` 的 disable/enable 覆写、`dsh.profile.bundles` 的增删）MUST 由市场经 dsh 的进程内维护函数完成，不依赖 pnpm。
 - FR-201-016：插件的**更新/维护**（版本更新、启用停用、分组/备注/收藏等）MUST 沿用市场既有能力；其中涉及安装的动作同样经 FR-201-013 的进程内通道。
-- FR-201-017：当宿主未提供 `desktopProfiles` 契约时（例如市场版本变化），系统 MUST 显式记录安装通道不可用（不静默）；可降级为 012 的 Route 2（市场补丁）或明确报错。
-- FR-201-018：系统 MUST 在构建期断言市场版本与固定常量（`1.66.7`）一致；不一致即失败（落实于 012 的 `assertDshMarketVersion()`）。
+- FR-201-017：当宿主未提供 `desktopProfiles` 契约时（例如市场版本变化），系统 MUST 显式记录安装通道不可用（不静默）；可降级为 110 的 Route 2（市场补丁）或明确报错。
+- FR-201-018：系统 MUST 在构建期断言市场版本与固定常量（`1.66.7`）一致；不一致即失败（落实于 110 的 `assertDshMarketVersion()`）。
 
 ## 4. 关键实体
 
@@ -148,16 +148,16 @@ dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂�
 - **幂等性**：构建、收集物化、运行期复制、版本断言均 MUST 可重复执行。
 - **健壮性**：收集阶段市场缺失或版本不符 MUST 硬失败；运行期复制失败 MUST 不阻塞启动（warn）。
 - **体积**：市场产物与其运行时依赖（`undici` 等）增加部署包体积，属可接受代价；不复制 `@deepseek-ai` scope 与源码/测试/devDeps 以控制体积。
-- **安全**：`allowRestart: false` 关闭市场的进程重启能力；市场 API 仅接受同源 loopback 请求（沿用 dsh-market 既有约束）；安装通道 `ignoreScripts`（由 012 保证）。
+- **安全**：`allowRestart: false` 关闭市场的进程重启能力；市场 API 仅接受同源 loopback 请求（沿用 dsh-market 既有约束）；安装通道 `ignoreScripts`（由 110 保证）。
 - **可维护性**：市场作为 sibling 源码引用，随其 tag 迭代；版本集中固定并断言；安装通道走市场已内置契约（不 patch），降低升级耦合。
 
 ## 7. 假设与约束
 
 - **假设**：dsh-market 为本工程同级目录源码引用 `../dsh-market`（submodule 固定 commit，实际版本 `1.66.7`）。`[源码]`
 - **假设**：市场默认 profile 为 `web`（`config?.profile ?? argvProfile() ?? 'web'`），本工程用 `desktop`，须显式注入，否则安装/删除写错目录。`[源码]`
-- **假设（已决议，替代旧 [NEEDS CLARIFICATION]）**：市场在 `config.profile: desktop` 下若宿主提供 `desktopProfiles` 服务，则走 `desktopPnpm` 进程内通道（`dsh-market/src/index.ts:183,285-292`；`dsh-cli.ts:577-608`）。宿主侧由 [`012-pnpm-integration`](../012-pnpm-integration/) 提供该契约的实现。固定版本 1.66.7 已含该分支。`[源码]`
+- **假设（已决议，替代旧 [NEEDS CLARIFICATION]）**：市场在 `config.profile: desktop` 下若宿主提供 `desktopProfiles` 服务，则走 `desktopPnpm` 进程内通道（`dsh-market/src/index.ts:183,285-292`；`dsh-cli.ts:577-608`）。宿主侧由 [`110-pnpm-integration`](../110-pnpm-integration/) 提供该契约的实现。固定版本 1.66.7 已含该分支。`[源码]`
 - **约束（鸿蒙沙箱禁 symlink）**：运行期复制到 `$DSH_HOME/profiles/node_modules/dshmarket` 采用 `cpSync`（复制）而非 symlink。
-- **约束（无子进程）**：市场的安装/卸载 MUST NOT 通过 spawn node/pnpm 子进程完成（应用域 SIGSYS）；由 012 的进程内引擎承担。
+- **约束（无子进程）**：市场的安装/卸载 MUST NOT 通过 spawn node/pnpm 子进程完成（应用域 SIGSYS）；由 110 的进程内引擎承担。
 - **约束（功能边界）**：`git:` 源插件、依赖 lifecycle 构建脚本的插件不可安装（设备无 git；`ignoreScripts`）；须在 UI/文档披露。
 - **约束（无便携 ELF 运行时）**：本工程不内置便携 Node/pnpm 的 ELF（路径 A 已撤回，需二进制证书）；安装通道依赖纯 JS 引擎（路径 B）。
 
@@ -170,10 +170,10 @@ dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂�
 
 **下游 / 本工程模块间依赖**：
 
-- [`012-pnpm-integration`](../012-pnpm-integration/)：提供进程内 pnpm 引擎与 `desktopProfiles`/`desktopPnpm` 契约实现。**本模块的安装通道依赖它**。
-- `005-build-pipeline`：本模块的市场构建与物化落点在 `build-dsh.mjs` / `collect-dsh.mjs`。
-- `006-runtime-profile`：本模块扩展其 `profiles/desktop/package.json`（bundles + dependencies）与 `cordis.patch.yml`（market 行 config）。
-- `001-host`：本模块在 `startHost()` 前经 `ensureDshMarketProfileLink()` 复制市场到 profile；并承载 012 的契约注册接线。
+- [`110-pnpm-integration`](../110-pnpm-integration/)：提供进程内 pnpm 引擎与 `desktopProfiles`/`desktopPnpm` 契约实现。**本模块的安装通道依赖它**。
+- `111-build-pipeline`：本模块的市场构建与物化落点在 `build-dsh.mjs` / `collect-dsh.mjs`。
+- `105-upstream-adapter-bundle`：本模块扩展其 `profiles/desktop/package.json`（bundles + dependencies）与 `cordis.patch.yml`（market 行 config）。
+- `115-host`：本模块在 `startHost()` 前经 `ensureDshMarketProfileLink()` 复制市场到 profile；并承载 110 的契约注册接线。
 
 ---
 

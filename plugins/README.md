@@ -54,6 +54,6 @@
 ## 五、相关文档
 
 - [`specs/202-plugin-fs-mutate/`](../specs/202-plugin-fs-mutate/) —— fs-mutate 插件的规格、技术方案与测试用例
-- [`specs/010-tool-bash/`](../specs/010-tool-bash/) —— exec 插件（`bash` 工具）的规格、技术方案、任务与测试用例
+- [`specs/112-tool-bash/`](../specs/112-tool-bash/) —— exec 插件（`bash` 工具）的规格、技术方案、任务与测试用例
 - [`../dsh-plugins/README.md`](../../dsh-plugins/README.md) —— 父工程通用插件目录
 - [`../README.md`](../README.md) —— 本工程总说明中的插件约定章节

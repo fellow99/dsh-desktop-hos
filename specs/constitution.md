@@ -94,3 +94,11 @@
 - 提交信息遵循 Conventional Commits 前缀（`feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert`）。
 - 模块规范文档（spec/plan）成对产出，规格（WHAT）与技术方案（HOW）分离。
 - 文档用中文 + 英文技术术语（对齐 sibling desktop 规范集）。
+
+## 7. 规范编号与文档分工（继承父工程宪法）
+
+1. **0XX = 各子工程公共、共同的需求模块**：`011-version-<VERSION>`（版本更新，原 `101-version-*`）、`012-building-workflow`（构建工作流；鸿蒙工程暂无）、`013-branding`（品牌化，原 `010-assets` 并入）。
+2. **1XX = 本工程基础功能模块**：编号以 `dsh-desktop-android` 为基准对齐；本工程为 `101/102/103/104/105/110/111/112/114/115/117`，原 `001-012` 已迁移。
+3. **2XX = 补丁/插件模块**：与兄弟工程对齐；本工程为 `201/202/203/204`。`3XX` 预留给技能类规范（`301`）。
+4. **编号即契约**：目录名、`spec.md`/`plan.md` 的 `FR-*` 前缀、README 索引、SPECS_CHECKLIST 必须一致；新增/改号模块必须同时更新本文件与父工程索引。
+5. **文档分工**：父工程 `specs/` 关注整体规划、整体设计与各子工程共同需求；本工程 `specs/` 关注本工程具体技术实现与独立需求，不重复父工程的 overall 级内容。

@@ -2,7 +2,7 @@
  * Unit tests for the resident shell session (`lib/session.js`) driven through
  * the injected `spawn` seam — no real shell, no device.
  *
- * Covers the session rows of `specs/010-tool-bash/test-cases.md` §2
+ * Covers the session rows of `specs/112-tool-bash/test-cases.md` §2
  * (TC-U8, plus the unit portion of AC-13/AC-14) and spec AC-12/AC-14.
  */
 

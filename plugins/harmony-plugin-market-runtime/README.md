@@ -2,7 +2,7 @@
 
 HarmonyOS DSH plugin that provides the two services `dsh-market` feature-detects — **`desktopProfiles`** and **`desktopPnpm`** — so the market runs plugin installs **in-process** instead of spawning `node`/`pnpm` children (which HarmonyOS kills with `SIGSYS`).
 
-This is the "Route 1" wiring of `specs/012-pnpm-integration`: it consumes the market's built-in cross-environment contract without modifying the market.
+This is the "Route 1" wiring of `specs/110-pnpm-integration`: it consumes the market's built-in cross-environment contract without modifying the market.
 
 ## Why a plugin (not main-process code)
 

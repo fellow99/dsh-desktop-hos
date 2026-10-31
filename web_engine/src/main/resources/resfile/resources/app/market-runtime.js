@@ -1,10 +1,10 @@
 /**
- * 011-runtime-provisioning —— 内置插件市场 `dshmarket` 的运行时供给引导（路径 A / B / C）。
+ * 117-runtime-provisioning —— 内置插件市场 `dshmarket` 的运行时供给引导（路径 A / B / C）。
  *
  * 为什么需要它：市场的安装 / 卸载通道依赖 `node` + `pnpm` 入口点 + `dsh plugin` 三件套，
  * 而鸿蒙 HAP 内没有可运行的 node（B0：`process.execPath` 指向不存在的 ELF），`symlink`/`chmod`
  * 对第三方应用被禁（B1：`13900012`），用户目录 ELF 被拒执行（B2），`#!/usr/bin/env node` 的
- * shebang 假设破裂（B3）。本模块按 `specs/011-runtime-provisioning/spec.md` §4.3 的**有序**规则
+ * shebang 假设破裂（B3）。本模块按 `specs/117-runtime-provisioning/spec.md` §4.3 的**有序**规则
  * 探测并采用下列机制（**禁跳级**）：
  *
  *   - **路径 A（原主路径，**0.1.5 已撤回**）**：随包携带、经二进制证书签名的 Node ELF，以 public HNP

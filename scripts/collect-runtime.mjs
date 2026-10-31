@@ -279,7 +279,7 @@ function restoreTree(srcRel, destRel, label) {
 function stage2RestoreAppTriple() {
   stageBanner(2, '恢复 App 主进程文件（main.js / market-runtime.js / renderer-preload.js / package.json）+ 附带技能');
   restoreOne('src-main/main.js', `${APP_RESFILE_DIR}/main.js`, 'main.js');
-  // 011-runtime-provisioning：市场运行时引导（main.js 在启动期 require('./market-runtime.js')）。
+  // 117-runtime-provisioning：市场运行时引导（main.js 在启动期 require('./market-runtime.js')）。
   // 新增的 src-main 文件**必须**在此登记，否则不会进 HAP，设备上 require 失败即主进程崩溃。
   restoreOne('src-main/tar-extract.js', `${APP_RESFILE_DIR}/tar-extract.js`, 'tar-extract.js');
   restoreOne('src-main/market-runtime.js', `${APP_RESFILE_DIR}/market-runtime.js`, 'market-runtime.js');

@@ -4,9 +4,9 @@
  * plugin installs **in-process** (via a worker-thread pure-JS pnpm engine)
  * instead of spawning node/pnpm children, which HarmonyOS kills with SIGSYS.
  *
- * This is the "Route 1" wiring of 012-pnpm-integration: it consumes the
+ * This is the "Route 1" wiring of 110-pnpm-integration: it consumes the
  * market's built-in cross-environment contract without modifying the market
- * (see `specs/012-pnpm-integration/plan.md` §6).
+ * (see `specs/110-pnpm-integration/plan.md` §6).
  *
  * Named exports only: a default export makes the Loader discard `inject`.
  *
