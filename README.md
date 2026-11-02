@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="Version">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.2-7C5CFF" alt="dsh version">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.5-7C5CFF" alt="dsh version">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
@@ -75,7 +75,7 @@ Three routes, in order of convenience:
 
 | Shell | dsh (upstream tag) | Runtime | Device / API | Verified |
 |---|---|---|---|---|
-| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.2` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | built & signed; on-device re-verification pending (0.2.0 was verified) |
+| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.5` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | built & signed; on-device re-verification pending (0.2.0 was verified) |
 
 `versionCode` must be a number and must **strictly increase** on every AppGallery submission. Upstream dsh is a developer preview: each shell pins one tag, and `patches/<dsh-tag>/` moves with it.
 
@@ -95,7 +95,7 @@ Three HarmonyOS adaptations make it work: **loopback isolation** (bind a wildcar
 
 - **Electron-on-HarmonyOS** runtime ([`harmonypc-electron`](https://atomgit.com/jianguoxu/harmonypc-electron)) — Electron 37 / Node 22.17.0
 - **ArkTS / ArkUI** (Stage model) with the `web_engine` bridge HAR
-- Upstream [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) pinned at `dsh-v0.2.1-rc.2`; this shell's patches live in `patches/dsh-v0.2.1-rc.2/`
+- Upstream [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) pinned at `dsh-v0.2.1-rc.5`; this shell's patches live in `patches/dsh-v0.2.1-rc.5/`
 
 ## Build, sign & install
 

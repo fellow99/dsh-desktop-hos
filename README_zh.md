@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="版本">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.2-7C5CFF" alt="dsh 版本">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.5-7C5CFF" alt="dsh 版本">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
@@ -75,7 +75,7 @@
 
 | 外壳版本 | dsh（上游 tag） | 运行时 | 设备 / API | 验证程度 |
 |---|---|---|---|---|
-| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.2` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 已构建并签名；真机复验待做（0.2.0 已验证） |
+| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.5` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 已构建并签名；真机复验待做（0.2.0 已验证） |
 
 `versionCode` 必须为数字，且每次向 AppGallery 提交都必须**严格递增**。上游 dsh 处于 developer preview：一个外壳钉一个 tag，`patches/<dsh-tag>/` 随之迁移。
 
@@ -95,7 +95,7 @@ EntryAbility（ArkTS）→ Electron-on-HarmonyOS → 主进程（Node 22.17）
 
 - **Electron-on-HarmonyOS** 运行时（[`harmonypc-electron`](https://atomgit.com/jianguoxu/harmonypc-electron)）—— Electron 37 / Node 22.17.0
 - **ArkTS / ArkUI**（Stage 模型）+ `web_engine` 桥接 HAR
-- 上游 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) 锁定 `dsh-v0.2.1-rc.2`；本壳的补丁在 `patches/dsh-v0.2.1-rc.2/`
+- 上游 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) 锁定 `dsh-v0.2.1-rc.5`；本壳的补丁在 `patches/dsh-v0.2.1-rc.5/`
 
 ## 构建、签名与安装
 
