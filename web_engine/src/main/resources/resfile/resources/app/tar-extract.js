@@ -17,7 +17,13 @@
 
 const HEADER_SIZE = 512;
 
-/** 读取 ustar 头，规整为 { name, type, size }；仅识别文件 / 目录，其余按载荷跳过。 */
+/**
+ * 条目名归一化：tar 由 `-C <proj> dsh-dist` 打包，条目带 dsh-dist/ 前缀；
+ * 目标目录已含该层，剥掉避免双重前缀。GNU 长名（typeflag 'L'）同样需要这一步。
+ */
+function normalizeName(name) {
+  return String(name).replace(/^\.\//, '').replace(/^dsh-dist\//, '');
+}
 function readHeader(header) {
   const cstr = (start, end) =>
     header.subarray(start, end).toString('utf8').replace(/\0[\s\S]*$/, '');
@@ -28,8 +34,7 @@ function readHeader(header) {
   const typeflag = String.fromCharCode(header[156]);
 
   let fullName = prefix ? prefix + '/' + rawName : rawName;
-  // tar 由 `-C <proj> dsh-dist` 打包，条目带 dsh-dist/ 前缀；目标目录已含该层，剥掉避免双重前缀。
-  fullName = fullName.replace(/^\.\//, '').replace(/^dsh-dist\//, '');
+  fullName = normalizeName(fullName);
 
   let type;
   if (typeflag === '5') {
@@ -39,7 +44,7 @@ function readHeader(header) {
   } else {
     type = 'skip'; // 硬链接 / 符号链接 / pax 扩展头等：本构建不含，出现则仅跳过其载荷
   }
-  return { name: fullName, type, size };
+  return { name: fullName, type, size, typeflag };
 }
 
 /**
@@ -56,6 +61,10 @@ function createUstarParser(handlers = {}) {
   let carry = Buffer.alloc(0);
   let current = null; // { sink, remaining, padding }
   let finished = false;
+  // GNU tar 长名扩展（typeflag 'L'）的真名：其载荷是紧随其后条目的完整路径。
+  // 不处理它就会用 header 里被截断到 100 字节的名字建目录/写文件（实测在鸿蒙上
+  // 先建出 `...-detectio` 目录、再 open 同名文件 → EISDIR，整包解压中止）。
+  let pendingLongName = null;
 
   parser.push = function push(chunk) {
     if (finished || !chunk || chunk.length === 0) return;
@@ -74,6 +83,28 @@ function createUstarParser(handlers = {}) {
           return;
         }
         const meta = readHeader(header);
+        // GNU 长名：'L' 的载荷是下一个条目的真名；'K' 是链接目标（本实现不解链接，丢弃载荷）。
+        if (meta.typeflag === 'L') {
+          pendingLongName = Buffer.alloc(0);
+          current = {
+            sink: {
+              write: (chunk) => { pendingLongName = Buffer.concat([pendingLongName, Buffer.from(chunk)]); },
+              end: () => {},
+            },
+            remaining: meta.size,
+            padding: (HEADER_SIZE - (meta.size % HEADER_SIZE)) % HEADER_SIZE,
+          };
+          state = 'data';
+          continue;
+        }
+        if (pendingLongName !== null) {
+          const real = pendingLongName.toString('utf8').replace(/\0[\s\S]*$/, '');
+          pendingLongName = null;
+          if (real) {
+            meta.name = normalizeName(real);
+            meta.type = String.fromCharCode(header[156]) === '5' ? 'dir' : 'file';
+          }
+        }
         if (!meta.name) {
           state = 'header';
           continue;
