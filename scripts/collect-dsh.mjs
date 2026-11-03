@@ -703,6 +703,32 @@ function materializeRequireBuiltinPlatformPackage() {
   );
   cpSync(requireBuiltinNode, resolve(pkgDir, 'prebuilt/require_builtin.node'));
   console.log('[collect-dsh] require-builtin 平台包已物化到 dsh-dist/node_modules');
+
+  // 2) 把 node-addon-require-builtin 的入口换成直接转出平台包的 shim。
+  //
+  // 上游 lib/index.js 会经 node-addon-native-custom-loader 做「可用性校验」：
+  // validateLoadedBinding() 要求 getNativeBindingInfo().product === 'require-builtin'，
+  // 而本仓自编的 require_builtin.node 自报 product='openharmony-arm64'（且 abi='napi-v9'，
+  // 在 Node 22.17 / napi-10 运行时上向后兼容）。于是绑定能被 require 到、却在校验处被拒：
+  //   "No usable native binding found for node-addon-require-builtin-openharmony-arm64 (auto)"
+  // → 宿主 boot 失败 → 窗口停在 about:blank。
+  // 直接转出已验证可用的平台包，绕开该校验；语义与上游一致（导出 requireBuiltin /
+  // isAllowedInternalId / getNativeBindingInfo 三个函数）。
+  const entryDir = resolve(distDir, 'node_modules/node-addon-require-builtin/lib');
+  if (existsSync(entryDir)) {
+    writeFileSync(
+      resolve(entryDir, 'index.js'),
+      `'use strict';
+// [collect-dsh] OpenHarmony 垫片：见 scripts/collect-dsh.mjs materializeRequireBuiltinPlatformPackage()。
+// 原生 loader 的 product 校验期望 'require-builtin'，本仓自编 addon 自报 'openharmony-arm64'；
+// 直接转出平台包（其 prebuilt/require_builtin.node 已由 linker retry 锚定到 bundle/libs/arm64）。
+module.exports = require('node-addon-require-builtin-openharmony-arm64');
+`,
+    );
+    console.log('[collect-dsh] node-addon-require-builtin 已替换为平台包 shim');
+  } else {
+    console.warn('[collect-dsh] node-addon-require-builtin 未物化，跳过 shim 替换');
+  }
 }
 
 /**
