@@ -10,14 +10,14 @@
 <p align="center"><sub><b>真机实拍，不是效果图</b> —— HarmonyOS 6.1.0.135（API 24），2in1。界面就是官方 dsh Web UI，由进程内 dsh Host 同源加载。</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="版本">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.5-7C5CFF" alt="dsh 版本">
+  <img src="https://img.shields.io/badge/release-0.2.2-4D6BFE" alt="版本">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.2--rc.1-7C5CFF" alt="dsh 版本">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
 </p>
 
-**状态** `0.2.1`（`versionCode` 1009）—— 已构建并签名。核心链路（对话、Agent 循环、工具调用、会话持久化、插件市场、窗口状态）的 HarmonyOS 6.1.0.135（API 24）真机验证是在 **0.2.0** 上完成的；**0.2.1** 尚未重新做真机验证（目前仅验证构建与签名）。先把分发现实说清楚：**debug 签名的 HAP 绑定签名账号/设备**，**release 签名的包只能经 AppGallery 分发** —— 见[怎么获取](#怎么获取)。
+**状态** `0.2.2`（`versionCode` 1100）—— 已构建并签名。核心链路（对话、Agent 循环、工具调用、会话持久化、插件市场、窗口状态）的 HarmonyOS 6.1.0.135（API 24）真机验证是在 **0.2.0** 上完成的；**0.2.2** 尚未重新做真机验证（目前仅验证构建与签名）。先把分发现实说清楚：**debug 签名的 HAP 绑定签名账号/设备**，**release 签名的包只能经 AppGallery 分发** —— 见[怎么获取](#怎么获取)。
 
 ## 为什么这条路线不一样
 
@@ -75,7 +75,7 @@
 
 | 外壳版本 | dsh（上游 tag） | 运行时 | 设备 / API | 验证程度 |
 |---|---|---|---|---|
-| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.5` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 已构建并签名；真机复验待做（0.2.0 已验证） |
+| `0.2.2` · `versionCode` 1100 | `dsh-v0.2.2-rc.1` | Electron 37 / Node 22.17.0（`harmonypc-electron`） | HarmonyOS 6.1.0.135 · API 24 · 2in1 / 平板 | 已构建并签名；真机复验待做（0.2.0 已验证） |
 
 `versionCode` 必须为数字，且每次向 AppGallery 提交都必须**严格递增**。上游 dsh 处于 developer preview：一个外壳钉一个 tag，`patches/<dsh-tag>/` 随之迁移。
 
@@ -95,7 +95,7 @@ EntryAbility（ArkTS）→ Electron-on-HarmonyOS → 主进程（Node 22.17）
 
 - **Electron-on-HarmonyOS** 运行时（[`harmonypc-electron`](https://atomgit.com/jianguoxu/harmonypc-electron)）—— Electron 37 / Node 22.17.0
 - **ArkTS / ArkUI**（Stage 模型）+ `web_engine` 桥接 HAR
-- 上游 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) 锁定 `dsh-v0.2.1-rc.5`；本壳的补丁在 `patches/dsh-v0.2.1-rc.5/`
+- 上游 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) 锁定 `dsh-v0.2.2-rc.1`；本壳的补丁在 `patches/dsh-v0.2.2-rc.1/`
 
 ## 构建、签名与安装
 
@@ -125,7 +125,7 @@ hdc app install -r entry/build/default/outputs/default/entry-default-signed.hap
 │   ├── scripts/                   # 四阶段构建：collect-runtime → build-dsh → collect-dsh，外加 build-debug / build-release
 │   ├── runtime-overlays/          # 每次运行时 copy 后重新施加的应用定制（prune + overlay）
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（0.2.1：13 个）
+│   ├── patches/                   # dsh 上游 patch（0.2.2：13 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
 │   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）
@@ -151,7 +151,7 @@ hdc app install -r entry/build/default/outputs/default/entry-default-signed.hap
 
 ## 相关文档
 
-- [docs/鸿蒙环境能力清单-0.2.1.md](docs/鸿蒙环境能力清单-0.2.1.md) —— 0.2.1 能力清单：本版能做什么、不能做什么，以及与 ArkWeb 版的对标
+- [docs/鸿蒙环境能力清单-0.2.1.md](docs/鸿蒙环境能力清单-0.2.1.md) —— 0.2.2 能力清单：本版能做什么、不能做什么，以及与 ArkWeb 版的对标
 - [docs/构建签名与上架.md](docs/构建签名与上架.md) —— 维护者指南：架构、技术栈、构建阶段、签名、真机调试、应用市场上架
 - [docs/工程规划.md](docs/工程规划.md) —— 完整工程规划 + 最终实现记录（Electron 37 落地、关键适配改动、MVP 取舍、交叉编译优化路径）
 - [specs/README.md](specs/README.md) — 规范文档索引（项目级 + 9 模块 spec/plan，as-built）

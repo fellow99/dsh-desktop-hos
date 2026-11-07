@@ -10,14 +10,14 @@
 <p align="center"><sub><b>Device capture, not a mockup</b> — HarmonyOS 6.1.0.135 (API 24), 2in1. The UI is the official dsh Web UI, loaded same-origin from the in-process dsh Host.</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-0.2.1-4D6BFE" alt="Version">
-  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.1--rc.5-7C5CFF" alt="dsh version">
+  <img src="https://img.shields.io/badge/release-0.2.2-4D6BFE" alt="Version">
+  <img src="https://img.shields.io/badge/dsh-dsh--v0.2.2--rc.1-7C5CFF" alt="dsh version">
   <img src="https://img.shields.io/badge/HarmonyOS-API%2024-0A59F7" alt="HarmonyOS API 24">
   <img src="https://img.shields.io/badge/Electron-37-47848F" alt="Electron 37">
   <img src="https://img.shields.io/badge/license-MIT-2EA44F" alt="MIT">
 </p>
 
-**Status** `0.2.1` (`versionCode` 1009) — built and signed. Core flows (chat, agent loop, tool calls, session persistence, plugin market, window state) were verified on a HarmonyOS 6.1.0.135 (API 24) device for **0.2.0**; the **0.2.1** build has not been re-verified on device yet (build + signature verified only). Distribution reality up front: a **debug-signed HAP is bound to the signing account/device**, and a **release-signed package can only ship through AppGallery** — see [How to get it](#how-to-get-it).
+**Status** `0.2.2` (`versionCode` 1100) — built and signed. Core flows (chat, agent loop, tool calls, session persistence, plugin market, window state) were verified on a HarmonyOS 6.1.0.135 (API 24) device for **0.2.0**; the **0.2.2** build has not been re-verified on device yet (build + signature verified only). Distribution reality up front: a **debug-signed HAP is bound to the signing account/device**, and a **release-signed package can only ship through AppGallery** — see [How to get it](#how-to-get-it).
 
 ## Why this port is different
 
@@ -75,7 +75,7 @@ Three routes, in order of convenience:
 
 | Shell | dsh (upstream tag) | Runtime | Device / API | Verified |
 |---|---|---|---|---|
-| `0.2.1` · `versionCode` 1009 | `dsh-v0.2.1-rc.5` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | built & signed; on-device re-verification pending (0.2.0 was verified) |
+| `0.2.2` · `versionCode` 1100 | `dsh-v0.2.2-rc.1` | Electron 37 / Node 22.17.0 (`harmonypc-electron`) | HarmonyOS 6.1.0.135 · API 24 · 2in1 / tablet | built & signed; on-device re-verification pending (0.2.0 was verified) |
 
 `versionCode` must be a number and must **strictly increase** on every AppGallery submission. Upstream dsh is a developer preview: each shell pins one tag, and `patches/<dsh-tag>/` moves with it.
 
@@ -95,7 +95,7 @@ Three HarmonyOS adaptations make it work: **loopback isolation** (bind a wildcar
 
 - **Electron-on-HarmonyOS** runtime ([`harmonypc-electron`](https://atomgit.com/jianguoxu/harmonypc-electron)) — Electron 37 / Node 22.17.0
 - **ArkTS / ArkUI** (Stage model) with the `web_engine` bridge HAR
-- Upstream [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) pinned at `dsh-v0.2.1-rc.5`; this shell's patches live in `patches/dsh-v0.2.1-rc.5/`
+- Upstream [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) pinned at `dsh-v0.2.2-rc.1`; this shell's patches live in `patches/dsh-v0.2.2-rc.1/`
 
 ## Build, sign & install
 
@@ -125,7 +125,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── scripts/                   # Four-stage build: collect-runtime → build-dsh → collect-dsh, plus build-debug / build-release
 │   ├── runtime-overlays/          # App customizations re-applied after every runtime copy (prune + overlay)
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (13 for 0.2.1)
+│   ├── patches/                   # dsh upstream patches (13 for 0.2.2)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
 │   ├── skills/                    # This project's own tool skills (kebab-case, no prefix; shipped in the HAP as the bundled skill root)
@@ -151,7 +151,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 
 ## Related docs
 
-- [docs/鸿蒙环境能力清单-0.2.1.md](docs/鸿蒙环境能力清单-0.2.1.md) — capability inventory for 0.2.1: what works on this edition, what does not, and how the ArkWeb edition compares
+- [docs/鸿蒙环境能力清单-0.2.1.md](docs/鸿蒙环境能力清单-0.2.1.md) — capability inventory for 0.2.2: what works on this edition, what does not, and how the ArkWeb edition compares
 - [docs/构建签名与上架.md](docs/构建签名与上架.md) — maintainer guide: architecture, tech stack, build stages, signing, on-device debugging, AppGallery submission
 - [docs/工程规划.md](docs/工程规划.md) — full engineering plan + final implementation record (Electron 37 landing, key adaptation changes, MVP trade-offs, cross-compilation optimization path)
 - [specs/README.md](specs/README.md) — spec document index (project-level + 9 module spec/plan, as-built)

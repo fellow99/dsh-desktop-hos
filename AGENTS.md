@@ -10,9 +10,9 @@
 
 **DSH Desktop · Electron on HarmonyOS Edition** — 在鸿蒙 2in1 / 平板（API 24）上通过 **Electron 37** 运行官方未改动的 dsh Web UI，是真正的 Electron 应用，而非 ArkUI 重写界面。
 
-- **版本**：0.2.1（`versionCode` 1009）｜ 上游基线 `dsh-v0.2.1-rc.5` ｜ Electron 37 / Node 22.17.0（`../harmonypc-electron`）
+- **版本**：0.2.2（`versionCode` 1100）｜ 上游基线 `dsh-v0.2.2-rc.1` ｜ Electron 37 / Node 22.17.0（`../harmonypc-electron`）
 - **运行时权限**：需 ACL 受限权限 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（JIT）—— **2in1 / 平板专用**
-- **适配方式**：13 处 dsh 上游源码补丁（`patches/dsh-v0.2.1-rc.5/`）+ 三项鸿蒙适配（loopback 隔离、无软/硬链接、`HOME` 重定向进沙箱）
+- **适配方式**：13 处 dsh 上游源码补丁（`patches/dsh-v0.2.2-rc.1/`）+ 三项鸿蒙适配（loopback 隔离、无软/硬链接、`HOME` 重定向进沙箱）
 
 ### 运行模型（单进程、单源）
 ```
@@ -41,7 +41,7 @@ EntryAbility (ArkTS) → Electron-on-HarmonyOS → main process (Node 22.17)
 | `scripts/` | 四段构建：`collect-runtime → build-dsh → collect-dsh`，及 `build-debug` |
 | `runtime-overlays/` | 每次运行时拷贝后重放的定制（prune + overlay） |
 | `profiles/desktop/` | 自定义 desktop profile |
-| `patches/dsh-v0.2.1-rc.5/` | dsh 上游 13 处补丁 |
+| `patches/dsh-v0.2.2-rc.1/` | dsh 上游 13 处补丁 |
 | `plugins/` | 本工程自有插件（`harmony-plugin-XXX`，全部默认加载） |
 | `skills/` | 本工程自有工具技能（kebab-case，随 HAP 内置） |
 | `specs/` | as-built 规格（013、101–108、110–112、114–115、117、201、202） |
