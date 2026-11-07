@@ -1,0 +1,39 @@
+diff --git a/packages/bundle/web-app/src/startup.ts b/packages/bundle/web-app/src/startup.ts
+index 3152e085fb..d478e77900 100644
+--- a/packages/bundle/web-app/src/startup.ts
++++ b/packages/bundle/web-app/src/startup.ts
+@@ -10,7 +10,7 @@
+ import { Command } from 'commander'
+ import type { Context } from '@deepseek-ai/cordis'
+ import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+-import { isWildcardHost, type TlsConfig } from '@deepseek-ai/dsh-host-webserver'
++import type { TlsConfig } from '@deepseek-ai/dsh-host-webserver'
+ import { parsePublicUrl } from './public-url.ts'
+ 
+ /** Stable Cordis plugin name. */
+@@ -92,9 +92,6 @@ export function apply(ctx: Context): void {
+   const program = webCommand()
+   program.action(() => {
+     const options = program.opts<WebOptions>()
+-    if (options.host !== undefined && isWildcardHost(options.host)) {
+-      program.error(`error: --host ${options.host} is an unspecified (wildcard) address, which is not supported: binding every interface would expose remote code execution to the network; bind one concrete IPv4 or IPv6 address instead`)
+-    }
+     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
+       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
+     }
+diff --git a/packages/host/webserver/src/index.ts b/packages/host/webserver/src/index.ts
+index 73139550d3..f5bb1cf6e4 100644
+--- a/packages/host/webserver/src/index.ts
++++ b/packages/host/webserver/src/index.ts
+@@ -280,9 +280,8 @@ export class WebServer extends Service {
+     host: z.transform(z.string(), (value) => {
+       const parsed = parseIpLiteral(value)
+       if (parsed === undefined) throw notLiteralError(value)
+-      if (isWildcardAddress(parsed)) {
+-        throw new Error(`webserver: host ${JSON.stringify(value)} is an unspecified (wildcard) address, which is not supported: binding every interface would expose remote code execution to the network; bind one concrete IPv4 or IPv6 address of a local interface instead`)
+-      }
++      // 鸿蒙桌面版：允许绑定全网卡（0.0.0.0 / ::）。上游默认拒绝 wildcard 以防把
++      // 远程代码执行暴露到网络；本壳是单机 HarmonyOS 应用，绑定由 profile 显式指定。
+       return value
+     }).required(),
+     port: z.natural().max(65535).required(),

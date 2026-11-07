@@ -1,0 +1,52 @@
+diff --git a/packages/sandbox/sandbox/src/roots.ts b/packages/sandbox/sandbox/src/roots.ts
+index b2f1c39c24..1afc55b5aa 100644
+--- a/packages/sandbox/sandbox/src/roots.ts
++++ b/packages/sandbox/sandbox/src/roots.ts
+@@ -15,7 +15,7 @@
+ 
+ import { realpathSync, statSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+-import { resolve } from 'node:path'
++import { delimiter, resolve } from 'node:path'
+ import { HarnessError } from '@deepseek-ai/dsh-llm'
+ import type { SandboxExecutionPolicy } from './index.ts'
+ 
+@@ -44,6 +44,25 @@ function additionalRoot(path: string): string {
+   return physical
+ }
+ 
++/**
++ * Writable roots a deployment grants on top of the mode's meaning, read from
++ * `DSH_EXTRA_WRITABLE_ROOTS` (entries separated by `path.delimiter`). A product
++ * whose users routinely ask the agent to write into their own desktop,
++ * documents, or downloads directory names those directories here once at
++ * startup, instead of leaving every such write to a per-operation escalation.
++ *
++ * The variable is deployment state, not model input: no capability in the
++ * composition can set it, so granting a root is a decision the embedding
++ * product makes and the model cannot widen on its own.
++ * @returns the configured extra roots in their given spelling, or empty when
++ *   the variable is unset or holds no non-empty entry.
++ */
++function extraWritableRoots(): string[] {
++  const configured = process.env.DSH_EXTRA_WRITABLE_ROOTS
++  if (configured === undefined) return []
++  return configured.split(delimiter).map(entry => entry.trim()).filter(entry => entry.length > 0)
++}
++
+ /**
+  * Resolve a granted root to the path the enforcement layer actually compares:
+  * canonical (symlinks resolved), because both Seatbelt filters and the fs
+@@ -81,7 +100,11 @@ export function canonicalPath(path: string): string {
+  */
+ export function workspaceWritableRoots(policy: SandboxExecutionPolicy): string[] {
+   if (policy.mode !== 'workspace-write') return []
+-  return [...new Set([canonicalPath(policy.workspaceRoot), ...(policy.additionalWritableRoots ?? []).map(additionalRoot)])]
++  return [...new Set([
++    canonicalPath(policy.workspaceRoot),
++    ...(policy.additionalWritableRoots ?? []).map(additionalRoot),
++    ...extraWritableRoots().map(canonicalPath),
++  ])]
+ }
+ 
+ /**
