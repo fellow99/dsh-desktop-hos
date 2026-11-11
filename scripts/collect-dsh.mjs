@@ -420,6 +420,11 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     requireRow: 'persona',
     reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash，并为 minimal 提供其终端组的替代）',
   },
+  {
+    id: 'system-back',
+    name: 'harmony-plugin-system-back',
+    reason: 'HarmonyOS: 系统返回 seam（113-system-back：设置/抽屉/弹窗关闭，首页/会话无操作；零补丁 index-inject 注入，主进程 before-input-event 路由）',
+  },
 ];
 
 // dsh ≥ 0.2.0 的 preset 文件是「一个 - insert: 行内嵌 config.plugins: 数组」：插件行以 10 空格

@@ -183,6 +183,11 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     requireRow: 'persona',
     reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash，并为 minimal 提供其终端组的替代）',
   },
+  {
+    id: 'system-back',
+    name: 'harmony-plugin-system-back',
+    reason: 'HarmonyOS: 系统返回 seam（113-system-back：设置/抽屉/弹窗关闭，首页/会话无操作；零补丁 index-inject 注入，主进程 before-input-event 路由）',
+  },
 ];
 
 // dsh ≥ 0.2.0 的 preset 文件是「一个 - insert: 行内嵌 config.plugins: 数组」：插件行以 10 空格
@@ -873,6 +878,31 @@ function installFullscreenShortcut(win) {
   });
 }
 
+/**
+ * 113-system-back：把「系统返回键」路由到 Web UI seam（`window.__dshSystemBack`，由
+ * `harmony-plugin-system-back` 经 webserver/index-inject 注入）。
+ *
+ * 当前实现的保守子集：只拦截**专用返回键**（`BrowserBack`）——触发 seam（设置/抽屉/弹窗关闭、
+ * 首页/会话无操作）；**不碰 Escape**（dsh UI 原生已用 Escape 关闭弹层，拦截会破坏其语义），
+ * 也不拦 Backspace（避免影响文本编辑）。
+ *
+ * ⚠️ `[NEEDS CLARIFICATION]`：鸿蒙 2in1/平板上系统返回键到 Electron 窗口的确切事件形态无真机
+ * 验证（宪法 C2 诚实降级）。若真机证实返回键映射为其它键（如 Escape/Backspace/关闭窗口），
+ * 在此扩展键位并按 specs/113-system-back/plan.md §二 决策，同时更新能力清单。
+ */
+function installBackKeyHandler(win) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'BrowserBack') return;
+    event.preventDefault();
+    console.log('[dsh-harmony] 系统返回键 → seam（window.__dshSystemBack）');
+    void win.webContents.executeJavaScript(
+      '(typeof window.__dshSystemBack === "function") ? window.__dshSystemBack() : false'
+    ).catch((err) => {
+      console.warn('[dsh-harmony] seam 调用失败:', err && err.message ? err.message : String(err));
+    });
+  });
+}
+
 // ── 状态栏（托盘）─────────────────────────────────────────────────
 // ArkTS 侧早已随上游运行时进入 HAP（module.json5 里的 StatusBarEntryAbility、
 // StatusBarManager 适配器），本轮新增的 TrayAdapter 只是它的「JSON 单入单出」门面：
@@ -960,6 +990,7 @@ app.whenReady().then(async () => {
     win.setWindowButtonVisibility(true);
     trackWindowState(win);
     installFullscreenShortcut(win);
+    installBackKeyHandler(win);
     installExternalNavigationGuard(win);
     if (savedState.isMaximized) win.maximize();
   } catch (e) {
@@ -1009,6 +1040,7 @@ app.whenReady().then(async () => {
       });
       trackWindowState(w);
       installFullscreenShortcut(w);
+      installBackKeyHandler(w);
       if (st.isMaximized) w.maximize();
       if (host) {
         installLoopbackHeaderRewrite(w, host.port);

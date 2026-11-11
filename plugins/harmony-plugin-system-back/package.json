@@ -1,0 +1,19 @@
+{
+  "name": "harmony-plugin-system-back",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin: system-back seam for the dsh Web UI — closes settings/drawer/modals on system back, no-op on home/conversation (webserver/index-inject injection, zero upstream patch).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "license": "MIT"
+}
