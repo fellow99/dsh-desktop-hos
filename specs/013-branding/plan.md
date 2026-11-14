@@ -126,3 +126,8 @@
 | `src-main/main.js` | in-app 标题 |
 | `patches/dsh-v0.2.1-rc.2/dsh-rebrand.patch` | Web 品牌位 |
 | `patches/dsh-v0.2.1-rc.2/dsh-disable-welcome-notice.patch` | 首次引导 |
+
+## 9. r2 修订（包名）
+
+- `AppScope/app.json5` bundleName 由 `org.fellow99.dsh.DshDesktop` 改为 `top.fellow99.dsh.DshDesktopHos`。
+- 同步更新：`web_engine` 4 个适配器的硬编码 bundleName、`electron`/`runtime-overlays` 的 `shortcuts_config.json`。

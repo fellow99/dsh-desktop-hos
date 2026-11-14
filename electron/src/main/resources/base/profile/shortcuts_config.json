@@ -6,7 +6,7 @@
       "icon": "$media:app_icon",
       "wants": [
         {
-          "bundleName": "org.fellow99.dsh.DshDesktop",
+          "bundleName": "top.fellow99.dsh.DshDesktopHos",
           "moduleName": "electron",
           "abilityName": "EntryAbility",
           "parameters": {

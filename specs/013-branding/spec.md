@@ -3,6 +3,7 @@
 > Module: 013-branding
 > Status: Implemented（as-built；Web 品牌位经 `dsh-rebrand` patch）
 > Last Updated: 2026-11-01
+> 修订 r2（包名）：bundleName 纳入本模块登记，改为 `top.fellow99.dsh.DshDesktopHos`（r2 前为 `org.fellow99.dsh.DshDesktop`）。签名/版本号仍属 `108-compliance-release`。
 
 ## 1. 模块概述
 
@@ -30,7 +31,7 @@
 
 **不包含：**
 
-- 应用包名、签名、版本号（属 `108-compliance-release`）。
+- 应用 bundleName `top.fellow99.dsh.DshDesktopHos`（r2 起由本模块登记）、签名、版本号（签名/版本号属 `108-compliance-release`）。
 - 应用商店 listing 文案、宣传图。
 - 上游源码的结构性改造（仅通过既有 patch 替换品牌字符串/组件）。
 
@@ -48,7 +49,7 @@
 - FR-013-001：`AppScope/resources/base/element/string.json` 的 `app_name` MUST 为 `DSH Desktop`。
 - FR-013-002：`electron/src/main/resources/{base,en_US,zh_CN}/element/string.json` 的 `EntryAbility_label` MUST 为 `DSH Desktop`。
 - FR-013-003：`src-main/main.js` 中 loading 页标题、页面内标题、窗口标题、about 标题 MUST 为 `DSH Desktop`。
-- FR-013-004：应用 `bundleName`、`versionName`、`versionCode` MUST 由 `108-compliance-release` 管理，本模块不修改。
+- FR-013-004：应用 `bundleName` MUST 为 `top.fellow99.dsh.DshDesktopHos`（r2）；`versionName`、`versionCode` MUST 由 `108-compliance-release` 管理。
 
 ### 3.2 HarmonyOS 图标
 
@@ -116,11 +117,11 @@
 
 - 假设上游 `brand.localBuild` / `hero.headline` / `EmptyHero` 结构在锁定的 dsh tag 上稳定；升级 tag 需重做 patch 锚点。
 - 约束：不 fork 上游；只通过 patch 替换品牌字符串与组件。
-- 约束：不改动应用包名与签名材料。
+- 约束：bundleName 由本模块登记（r2）；不改动签名材料。
 
 ## 8. 依赖
 
 - 物料：父工程 `assets/`。
 - patch：`patches/dsh-v0.2.1-rc.2/dsh-rebrand.patch`、`dsh-disable-welcome-notice.patch`。
 - 上游：`deepseek-harness` `dsh-v0.2.1-rc.2`。
-- 下游：`111-build-pipeline`（应用 patch）、`108-compliance-release`（包名/签名/版本）。
+- 下游：`111-build-pipeline`（应用 patch）、`108-compliance-release`（签名/版本）。

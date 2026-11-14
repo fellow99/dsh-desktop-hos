@@ -66,7 +66,7 @@ export class PermissionManagerAdapter extends BaseAdapter {
   private ctxAdapter: ContextAdapter;
   private isInitialized: boolean = false;
   private appLabelId: number = 0;
-  private bundleName: string = 'org.fellow99.dsh.DshDesktop';
+  private bundleName: string = 'top.fellow99.dsh.DshDesktopHos';
   private bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION |
                         bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_METADATA;
 
