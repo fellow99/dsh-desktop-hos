@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+index a5e45dbf91..76acaeed4e 100644
+--- a/package.json
++++ b/package.json
+@@ -211,7 +211,6 @@
+     "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
+     "dev:web": "tsx scripts/dev-web.ts --poll",
+     "dev:bundle-registry": "tsx scripts/dev-bundle-registry.ts",
+-    "postinstall": "node scripts/install-lefthook.mjs",
+     "gen-official-bundle-catalog": "tsx scripts/gen-official-bundle-catalog.ts",
+     "verify-official-bundle-catalog": "tsx scripts/gen-official-bundle-catalog.ts --check",
+     "gen-provider-data": "tsx packages/llm/llm-pi-ai/scripts/gen-provider-data.ts",
