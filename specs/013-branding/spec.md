@@ -3,7 +3,7 @@
 > Module: 013-branding
 > Status: Implemented（as-built；Web 品牌位经 `dsh-rebrand` patch）
 > Last Updated: 2026-11-01
-> 修订 r2（包名）：bundleName 纳入本模块登记，改为 `top.fellow99.dsh.DshDesktopHos`（r2 前为 `org.fellow99.dsh.DshDesktop`）。签名/版本号仍属 `108-compliance-release`。
+> 修订 r2（包名）：bundleName 纳入本模块登记，改为 `top.fellow99.dsh.DshDesktopHos`。签名/版本号仍属 `108-compliance-release`。
 
 ## 1. 模块概述
 

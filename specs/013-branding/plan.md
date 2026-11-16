@@ -129,5 +129,5 @@
 
 ## 9. r2 修订（包名）
 
-- `AppScope/app.json5` bundleName 由 `org.fellow99.dsh.DshDesktop` 改为 `top.fellow99.dsh.DshDesktopHos`。
+- `AppScope/app.json5` bundleName 现为 `top.fellow99.dsh.DshDesktopHos`。
 - 同步更新：`web_engine` 4 个适配器的硬编码 bundleName、`electron`/`runtime-overlays` 的 `shortcuts_config.json`。

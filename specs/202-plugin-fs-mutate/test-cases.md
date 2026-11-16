@@ -11,7 +11,7 @@
 |---|---|
 | 目标设备 | `<设备 SN>` |
 | 系统 | HarmonyOS 6.1.0.135（API 24） |
-| 应用包名 | `org.fellow99.dsh.DshDesktop` |
+| 应用包名 | `top.fellow99.dsh.DshDesktopHos` |
 | `hdc` | `D:/oh-workspace/command-line-tools/sdk/default/openharmony/toolchains/hdc.exe` |
 | 构建前置 | `DEVECO_SDK_HOME=d:\oh-workspace\command-line-tools\sdk\`；`export MSYS_NO_PATHCONV=1` |
 | 设备侧 `$DSH_HOME` | `<userData>/.dsh`（即 `/data/storage/el2/base/files/.dsh`） |

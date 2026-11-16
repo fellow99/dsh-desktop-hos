@@ -1,7 +1,7 @@
 # pnpm 对接问题排查记录
 
 > 设备：HarmonyOS / OpenHarmony arm64（`process.platform === 'openharmony'`）
-> 应用：DeepSeek Harness 桌面版（HAP 包名 `org.fellow99.dsh.DshDesktop`，主进程 PID 32805）
+> 应用：DeepSeek Harness 桌面版（HAP 包名 `top.fellow99.dsh.DshDesktopHos`，主进程 PID 32805）
 > 排查日期：2026-09-29
 > 结论一句话：**在 DSH 签名包内无法使用 pnpm。** 直接原因是本应用域禁止子进程分配 JIT 可执行内存，任何 node 脚本（npm / corepack / pnpm）一启动就被内核以 `SIGSYS` 杀死；pnpm 装在哪、PATH 怎么配都改变不了这一点。
 
@@ -72,7 +72,7 @@ SHELL=/bin/sh
 
 要点：
 - PATH 里 `/usr/local/bin`、`/usr/bin`、`/data/app/bin` **都不存在**，实际只有 `/data/service/hnp/bin` 里的 node 系工具。
-- `process.execPath` 实际指向 `/system/bin/appspawn`（Electron 以 `libelectron.so` 形式被 appspawn 加载，`/proc/32805/exe` 仍是 appspawn）；`process.argv0` 是包名 `org.fellow99.dsh.DshDesktop`。这对 dsh-market 的「重新拉起 dsh CLI」逻辑是有影响的坑。
+- `process.execPath` 实际指向 `/system/bin/appspawn`（Electron 以 `libelectron.so` 形式被 appspawn 加载，`/proc/32805/exe` 仍是 appspawn）；`process.argv0` 是包名 `top.fellow99.dsh.DshDesktopHos`。这对 dsh-market 的「重新拉起 dsh CLI」逻辑是有影响的坑。
 - `/data/app` 是 `root:root 0711`，其下没有 `electron.org` 目录。
 
 ---

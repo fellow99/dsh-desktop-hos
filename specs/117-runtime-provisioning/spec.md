@@ -134,7 +134,7 @@
 | `process.platform` / `process.arch` | `openharmony` / `arm64` | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |
 | Node 版本（宿主进程） | `22.17.0`（Electron 主进程即 Node） | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |
 | `process.execPath` | `/data/app/electron.org/electron_1.0/bin/electron/electron`，**不存在（`ENOENT`）** | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424,426` |
-| 应用包名 | `org.fellow99.dsh.DshDesktop` | `[已归档规范]` `specs/202-plugin-fs-mutate/test-cases.md:15` |
+| 应用包名 | `top.fellow99.dsh.DshDesktopHos` | `[已归档规范]` `specs/202-plugin-fs-mutate/test-cases.md:15` |
 | `$DSH_HOME` | `<userData>/.dsh`（`/data/storage/el2/base/files/.dsh`） | `[源码]` `src-main/main.js:466-469` |
 
 ### 3.2 设备上的 HNP 现状（路径 A / C 的事实基础）

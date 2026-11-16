@@ -214,9 +214,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 ```bash
 hdc tconn <设备IP>:<端口>   # 先建立无线（IP）调试连接；端口见设备 开发者选项 → 无线调试
-hdc uninstall org.fellow99.dsh.DshDesktop   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
+hdc uninstall top.fellow99.dsh.DshDesktopHos   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
+hdc shell aa start -a EntryAbility -b top.fellow99.dsh.DshDesktopHos
 ```
 
 > ⚠️ **发布签名的包无法侧载。** 对 release 签名的包执行 `hdc app install` 会报 `code:9568322 ... signature verification failed due to not trusted app source`。真机回归请用 `-BuildMode release -SignMode debug`（release 编译 + debug 签名）；release 签名的包只用于 AppGallery 提交。
@@ -304,7 +304,7 @@ hdc shell uitest uiInput click <x> <y>                     # 点击**可以**触
 ```
 
 - ⚠️ `uitest uiInput text` 与 `uiInput keyEvent` **无法**触达 Web 内容（编辑器不是原生控件）—— 文本输入请用 inspector 的 `Input.insertText`。
-- dump 覆盖**整屏**，因此系统设置等其他窗口会一并出现。点击前先 `hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop` 再重新 dump，确认应用在前台。
+- dump 覆盖**整屏**，因此系统设置等其他窗口会一并出现。点击前先 `hdc shell aa start -a EntryAbility -b top.fellow99.dsh.DshDesktopHos` 再重新 dump，确认应用在前台。
 
 #### 宿主起来了吗？在哪个端口？
 
@@ -364,9 +364,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # release�
 **安装与启动**
 
 ```bash
-hdc uninstall org.fellow99.dsh.DshDesktop
+hdc uninstall top.fellow99.dsh.DshDesktopHos
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
+hdc shell aa start -a EntryAbility -b top.fellow99.dsh.DshDesktopHos
 ```
 
 > 若 debug 包仍报权限授予失败，说明 `.p7b` 尚未携带该受限权限 —— 重复上面的 DevEco 重生成（确认 ACL 审批已通过）后再重新构建。
